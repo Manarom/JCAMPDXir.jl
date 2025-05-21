@@ -176,9 +176,9 @@ Most impostant are
     XUNITS - x data units saved to file,  must be one of  $(supported_x_units)
     YUNITS - y data units saved to file, must be one of $(supported_y_units) 
 
-If x_units are not equal to the key-word argument XUNITS than the function converts x-values before saving to file see [`xconvert`](@ref)
+If x_units are not equal to the key-word argument XUNITS than the function converts x-values before saving to file see [`xconvert!`](@ref)
 
-If y_units are not equal to the key-word argument XUNITS than the function converts y-values before saving to file see [`yconvert`](@ref)
+If y_units are not equal to the key-word argument XUNITS than the function converts y-values before saving to file see [`yconvert!`](@ref)
 
 # Example
 ```julia

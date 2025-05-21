@@ -2,7 +2,7 @@
 # JCAMPDXir.jl
 
 ## General description
-This small package is designed to read and write the infrared spectra from/to files written JCAMP-DX format (common file extention is ".jdx").
+This small package is designed to read and write the infrared spectra from/to files in JCAMP-DX format (common file extention is ".jdx").
 JCAMP-DX (infrared) file format was developed for the exchange of infrared spectra between different laboratories.
 General descripton of JCAMP-DX infrared format can be found in 
 [JCAMP-DX for infrared 4.24](https://iupac.org/what-we-do/digital-standards/jcamp-dx/)
