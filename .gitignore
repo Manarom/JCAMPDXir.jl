@@ -1,1 +1,3 @@
 /Manifest*.toml
+/.vscode/*
+/test/tests data/written.jdx
