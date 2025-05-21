@@ -102,7 +102,7 @@ JCAMPDXir
         y_units="TRANSMITTANCE"; kwargs...)
 
         (x_copy,_,y_int,headers) = prepare_jdx_data(x,y,x_units,y_units, kwargs...)
-        y_columns_number = round(Int,80/(ndigits(JDXreader.YMAX_INT)+1)) # number of columns of y-data
+        y_columns_number = round(Int,80/(ndigits(JCAMPDXir.YMAX_INT)+1)) # number of columns of y-data
         npoints = length(y_int)
         fmt = Printf.Format(" %d"^y_columns_number)
         open(file_name,"w", lock = true) do io
@@ -117,14 +117,14 @@ JCAMPDXir
                 end_ind = counter+y_columns_number-1
                 if end_ind<=npoints
                     line = Printf.format(fmt,y_int[start_ind:end_ind]...)
-                    x_str = @sprintf("%.8f",x[line_index])
-                    remained_length = 88 - strlength(line)
-                    println(io,x_str[1:remained_length]*line)
+                    x_str = @sprintf("%.8f",x[start_ind])
+                    remained_length = 88 - length(line)
+                    remained_length>length(x_str) ? println(io,x_str*line) : println(io,x_str[1:remained_length]*line)
                 else
                     break
                 end
                 counter = end_ind+1
-                line_index+=line_index
+                line_index+=1
             end
             println(io,"##END")
         end
