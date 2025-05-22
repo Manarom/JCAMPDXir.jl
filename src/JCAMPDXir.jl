@@ -105,8 +105,9 @@ JCAMPDXir
 julia> convert!([1,2,3],xUnits("MKM"),xUnits("1/cm"))) 
 ```
 """
-convert!(x::AbstractArray,::sUnits{T},::sUnits{T}) where T = x 
-    
+    convert!(x::AbstractArray,::sUnits{T},::sUnits{T}) where T = x 
+    convert!(x::AbstractArray,::sUnits{T},::sUnits{P}) where T where P = x 
+
     convert!(x::AbstractArray,::xUnits{1},::xUnits{2}) = @. x = 1e4/x #mkm=>1/cm
     convert!(x::AbstractArray,::xUnits{2},::xUnits{1}) = @. x = 1e4/x #1/cm=>mkm
     convert!(x::AbstractArray,::xUnits{1},::xUnits{3}) = @. x = 1e3*x #mkm=>nm
