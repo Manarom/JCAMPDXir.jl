@@ -166,20 +166,20 @@ is envolved, function will automatically interpolate and sort the data on unifor
 
 x_units  - units of x data, must be one of  $(supported_x_units)
 
-y_units - units of y data, must be one of $(supported_y_units) 
+y_units -  units of y data, must be one of $(supported_y_units) 
 
 Further any keword arguments can be provided, all of them will be written to the head of the file.
 All keyword arguments appear in the file in uppercase.
 
-Most impostant are 
+Most impostant keywords are 
 
     TITLE - the title of the file (it is always on top of the file)
     XUNITS - x data units saved to file,  must be one of  $(supported_x_units)
     YUNITS - y data units saved to file, must be one of $(supported_y_units) 
 
-If x_units are not equal to the key-word argument XUNITS than the function converts x-values before saving to file see [`xconvert!`](@ref)
+If `x_units` (function's fourth argument) are not equal to the key-word argument XUNITS than the function converts x-values before saving to file see [`xconvert!`](@ref)
 
-If y_units are not equal to the key-word argument XUNITS than the function converts y-values before saving to file see [`yconvert!`](@ref)
+If `y_units` (function's fifth argument) are not equal to the key-word argument XUNITS than the function converts y-values before saving to file see [`yconvert!`](@ref)
 
 # Example
 ```julia
@@ -188,8 +188,6 @@ julia> filename = joinpath(@__DIR__,"test.jdx")
 julia> write_jdx_file(filename,[1,2,3,4,5,6,7,8],rand(8),"MKM","T",title = "new file",XUNIT="1/CM",YUNITS="KUBELKA-MUNK") 
 
 ```
-
-
 """
 function write_jdx_file(file_name,x::Vector{Float64},y::Vector{Float64},x_units::String="1/CM",
         y_units::String="TRANSMITTANCE"; kwargs...)
@@ -225,7 +223,13 @@ function write_jdx_file(file_name,x::Vector{Float64},y::Vector{Float64},x_units:
         end
         return nothing
     end
-    function prepare_jdx_data(x::Vector{Float64},y::Vector{Float64},x_units::String="1/CM",
+    """
+    prepare_jdx_data(x::Vector{Float64},y::Vector{Float64},x_units::String="1/CM",
+                                                    y_units::String="TRANSMITTANCE"; kwargs...)
+
+This function prepares the data to be written using [`write_jdx_file`](@ref)
+"""
+function prepare_jdx_data(x::Vector{Float64},y::Vector{Float64},x_units::String="1/CM",
                                                     y_units::String="TRANSMITTANCE"; kwargs...)
         @assert length(x)==length(y)
         x_init = copy(x)
@@ -241,6 +245,16 @@ function write_jdx_file(file_name,x::Vector{Float64},y::Vector{Float64},x_units:
         push!(headers,"XYDATA"=>v)
         xconvert!(x_init, x_units, headers["XUNITS"])
         yconvert!(y_init, y_units, headers["YUNITS"])
+        # after unit conversion there can be the case that some data is
+        # NaN or Inf, thus need the isfinite check
+        inf_inds = Vector{Int}([])
+        for i in eachindex(x_init)
+            !isfinite(x_init[i]) || !isfinite(y_init[i]) ? push!(inf_inds,i) : nothing
+        end 
+        if !isempty(inf_inds)
+            deleteat!(x_init,inf_inds)
+            deleteat!(y_init,inf_inds)
+        end
         x_factor = headers["XFACTOR"] 
         n_points = length(x_init)
         if is_linspaced(x_init)# checks if all coordinates are equally spaced, if not - performing interpolation
@@ -258,12 +272,14 @@ function write_jdx_file(file_name,x::Vector{Float64},y::Vector{Float64},x_units:
             x_copy = collect(range(minimum(x_init),maximum(x_init),n_points)) 
             if !issorted(x_init)
                 y_int = sortperm(x_init)
-                y_copy = linear_interpolation(x_init[y_int],y_init[y_int])(x_copy)
+                interpolator =  linear_interpolation(x_init[y_int],y_init[y_int])
             else
                 y_int = Vector{Int}(undef,n_points)
-                y_copy = linear_interpolation(x_init,y_init)(x_copy)
+                interpolator =  linear_interpolation(x_init,y_init)
             end
+            y_copy = interpolator(x_copy)
             x_copy./=x_factor
+            interpolator = nothing
         end
         cur_date_time = string(now())
         ind = findfirst("T",cur_date_time)[1]
@@ -293,6 +309,9 @@ function write_jdx_file(file_name,x::Vector{Float64},y::Vector{Float64},x_units:
         end
         return true
     end
+    """
+    Structure to store parsed data 
+"""
     mutable struct JDXfile
         # Main struct, prepares loads file name, parses data and data headers
         file_name::String
@@ -313,12 +332,28 @@ function write_jdx_file(file_name,x::Vector{Float64},y::Vector{Float64},x_units:
         end
     end
     """
+    write_jdx_file(file_name,jdx::JDXfile; kwargs...)
+
+    Writes [`JDXfile`](@ref) object to file
+"""
+write_jdx_file(file_name,jdx::JDXfile; kwargs...) = write_jdx_file(file_name,jdx.x_data,
+                                                                        jdx.y_data,
+                                                                        get(jdx.data_headers,"XUNITS","1/CM"),
+                                                                        get(jdx.data_headers,"YUNITS","A.U.");
+                                                                        kwargs...)
+   """
+    write_jdx_file(jdx::JDXfile; kwargs...)
+
+    Writes [`JDXfile`](@ref) object to file
+"""
+write_jdx_file(jdx::JDXfile; kwargs...) = write_jdx_file(jdx.file_name,jdx; kwargs...)                                                                  
+    """
     read_jdx_file(file_name::String)
 
     Read JCAMP format file file_name - full file name,
-    Input: 
+    Input arguments: 
         file_name - full file name
-    returns named tuple with fields :
+    returns named tuple with fields:
            x - coordinate (wavelength, wavenumber or other)
            y - data
            headers - dictionary in "String => value" format with 
@@ -405,7 +440,6 @@ parse_headers(file::String) = file |> JDXfile |>  parse_headers!
     read!(jdx::JDXfile)
 
 fills precreated JDXfile object
-
 """
 function read!(jdx::JDXfile)
         if !isfile(jdx.file_name)
