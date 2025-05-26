@@ -12,31 +12,44 @@ data_norm_rel(x,y) =begin
     m = sum(sum(i) for i in zip(x,y))/(2*length(x))
     return dn/m
 end
+A2T(x) = begin # function to convert the absorbance to transmission 
+    return  @. 10^(-x) #A = log10(I0/I) = -log10(T) => T=10^(-A)
+end
+KM2T(x) = begin # function to convert Kubelka-Munk to transmittance
+    return  @. 10^(-x) #A = log10(I0/I) = -log10(T) => T=10^(-A)
+end
 @testset "JCAMPDXir.jl" begin
-    # testing by writing and reading the same data
+    println("\nTesting by writing and reading the same data")
     data = JCAMPDXir.read_jdx_file(test_file) # reading test file
     x_units = data.headers["XUNITS"] # x units of loaded data
     y_units = data.headers["YUNITS"] # y units of loaded data
     JCAMPDXir.write_jdx_file(written_file_name,data.x,data.y,x_units,y_units; yunits =y_units,xunits = x_units ) # writing file with the same units
     data_written = JCAMPDXir.read_jdx_file(written_file_name)
-    @show data_norm_rel(data.x,data_written.x)
-    @show data_norm_rel(data.y,data_written.y)
-    @test data_norm_rel(data.x,data_written.x) <= 1e-5  
-    @test data_norm_rel(data.y,data_written.y) <= 1e-5 
-    # testing the equality of intermediate data of Int type
+    dx_norm = data_norm_rel(data.x,data_written.x)
+    dy_norm = data_norm_rel(data.y,data_written.y)
+    println("relative error: S(x) =  $(dx_norm), S(y) = $(dy_norm) ")
+    @test dx_norm<= 1e-5  
+    @test dy_norm<= 1e-5 
+    println("____________________")
+    println("\nTesting the equality of intermediate data of integer type used to compress the y-data")
     no_headers_data= readdlm(no_headers_file) # reading benchmark data
     x_test = no_headers_data[:,1]
     y_test = Int.(vec(transpose(no_headers_data[:,2:end]))) 
     (x_copy,_,y_int,_) = JCAMPDXir.prepare_jdx_data(data.x,data.y,x_units,y_units; yunits =y_units,xunits = x_units )
-    @test data_norm_rel(x_copy[1:8:end],x_test) <= 1e-5  
-    @test data_norm_rel(y_int,y_test) <= 1e-5 
-    # testing the correctness of units convertion
-    T_data = JCAMPDXir.read_jdx_file(two_column_ascii_file_name) # this file stores two-column data without headers
-    n_points = 8*div(length(T_data.x),8)
+    dx_norm = data_norm_rel(x_copy[1:8:end],x_test)
+    dy_norm = data_norm_rel(y_int,y_test)
+    println("relative error: S(x) =  $(dx_norm), S(y) = $(dy_norm) ")
+    @test dx_norm <= 1e-5  
+    @test dy_norm <= 1e-5 
+    println("____________________")
+    println("\nTesting the correctness of units convertion ")
+    T_data = JCAMPDXir.read_jdx_file(two_column_ascii_file_name,delimiter="\t") 
+    # this file stores two-column data with XUNITS and YUNITS the data is delimited with tab
+    n_points = 8*div(length(T_data.x),8) # the number of points should be an integer multiplyer of 8
     T_data_x = T_data.x[1:n_points]
     T_data_y = T_data.y[1:n_points]
-    @show T_data_x_units = T_data.headers["XUNITS"]
-    @show T_data_y_units = T_data.headers["YUNITS"]
+    T_data_x_units = T_data.headers["XUNITS"]
+    T_data_y_units = T_data.headers["YUNITS"]
     # in T_data x units are MKM and y units are TRANSMISSIVITY
     X_UNITS = values(JCAMPDXir.xNUM2STR) # all possible x units
     Y_UNITS = values(JCAMPDXir.yNUM2STR) # all possible y units
@@ -46,8 +59,7 @@ end
     # converting data manually 
     for YU in Y_UNITS
         for XU in X_UNITS
-            @show XU
-            @show YU
+            println("x : $(T_data_x_units) => $(XU) , y :  $(T_data_y_units) => $(YU)")
             JCAMPDXir.write_jdx_file(written_file_name,T_data_x,T_data_y,
                                             T_data_x_units,T_data_y_units; 
                                             yunits =YU,xunits = XU,
@@ -61,16 +73,21 @@ end
                 x_test  =  1000 .*T_data_x 
             end
 
-            @show data_norm_rel(x_test,data_current.x)
-            @test data_norm_rel(x_test,data_current.x)<1e-1
+            dx_norm = data_norm_rel(x_test,data_current.x)
+            @test dx_norm < 1e-1
 
-            if YU == "TRANSMITTANCE" || YU =="REFLECTANCE"
-                y_test = copy(T_data_y)
-
-                @show data_norm_rel(y_test,data_current.y)
-                @test data_norm_rel(y_test,data_current.y)<1e-1
-
+            if YU == "TRANSMITTANCE" || YU =="REFLECTANCE" || YU=="ARBITRARY UNITS"# units are the same as the reference data
+                interp1= linear_interpolation(x_test,T_data_y)
+            elseif YU == "ABSORBANCE"
+                interp1= linear_interpolation(x_test,A2T(T_data_y))
+            elseif YU == "KUBELKA-MUNK"
+                interp1= linear_interpolation(x_test,KM2T(T_data_y))
             end
+            y_test = interp1(data_current.x)
+           # @show length(y_test) length(data_current.y)
+           dy_norm = data_norm_rel(y_test,data_current.y)
+           println("relative error: S(x) =  $(dx_norm), S(y) = $(dy_norm) \n")
+            @test dy_norm < 1e-2
         end
     end
 

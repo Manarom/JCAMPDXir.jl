@@ -12,7 +12,7 @@ export JDXfile,
             yconvert!
 """
 This JCAMP-DX (infrared) file format was developed for the exchange of infrared spectra between different laboratories.
-General descripton of JCAMP-DX infrared format can be found in [`https://iupac.org/wp-content/uploads/2021/08/JCAMP-DX_IR_1988.pdf`]
+For general description of format refer to  [`UIPAC.ORG (pdf file)`](https://iupac.org/wp-content/uploads/2021/08/JCAMP-DX_IR_1988.pdf)
 In addition to the spectra themselves, the file also stores metadata containing information about the units of measurement
 and the conditions under which the spectra were acquired. A detailed specification of the format is provided via the link. 
 This package was written for a specific task and cannot be considered as a complete implementation of all JCAMP-DX format specification; 
@@ -77,6 +77,7 @@ JCAMPDXir
     const yNUM2STR = Dict(1=>"TRANSMITTANCE",2=>"REFLECTANCE",3=>"ABSORBANCE",4=>"KUBELKA-MUNK",5=>"ARBITRARY UNITS") 
     const supported_x_units = join(keys(xSTR2NUM),",");
     const supported_y_units = join(keys(ySTR2NUM),",");
+    const X_VIOLATION_CRITERIA = 1e-2
     abstract type sUnits{T} end
     struct yUnits{T}<:sUnits{T}
         yUnits(u::String) = begin
@@ -94,11 +95,11 @@ JCAMPDXir
     """
     convert!(x::AbstractArray,::sUnits{T},::sUnits{T}) where T
 
-    This functions can be used convert y and x units 
+This functions can be used convert y and x units 
 
-    supported x-units names: $(supported_x_units)
+supported x-units names: $(supported_x_units)
 
-    supported y-units names: $(supported_y_units)
+supported y-units names: $(supported_y_units)
 
 # Example
 ```
@@ -140,10 +141,10 @@ xconvert!(x::AbstractArray,input_units::String,output_units::String) = convert!(
     """
     yconvert!(y::AbstractArray,input_units::String,output_units::String)
 
-    Converts the values of `y` from `input_units` to `output_units`.
-    supported x-units names: $(supported_x_units)
-    All units can be written both in lower- and in uppercase, `T`,`R` and `A` stay for 
-    a shorthand for `TRANSMITTANCE`,`REFLECTANCE` and `ABSORBANCE`
+Converts the values of `y` from `input_units` to `output_units`.
+supported x-units names: $(supported_x_units)
+All units can be written both in lower- and in uppercase, `T`,`R` and `A` stay for 
+a shorthand for `TRANSMITTANCE`,`REFLECTANCE` and `ABSORBANCE`
 
 # Example
 ```julia
@@ -227,7 +228,7 @@ function write_jdx_file(file_name,x::Vector{Float64},y::Vector{Float64},x_units:
     prepare_jdx_data(x::Vector{Float64},y::Vector{Float64},x_units::String="1/CM",
                                                     y_units::String="TRANSMITTANCE"; kwargs...)
 
-This function prepares the data to be written using [`write_jdx_file`](@ref)
+Prepares data to be written using [`write_jdx_file`](@ref)
 """
 function prepare_jdx_data(x::Vector{Float64},y::Vector{Float64},x_units::String="1/CM",
                                                     y_units::String="TRANSMITTANCE"; kwargs...)
@@ -310,7 +311,9 @@ function prepare_jdx_data(x::Vector{Float64},y::Vector{Float64},x_units::String=
         return true
     end
     """
-    Structure to store parsed data 
+    Stored parsed data
+Must be filled using [`read!`](@ref) function
+file_name - stores the name of file
 """
     mutable struct JDXfile
         # Main struct, prepares loads file name, parses data and data headers
@@ -321,7 +324,7 @@ function prepare_jdx_data(x::Vector{Float64},y::Vector{Float64},x_units::String=
         is_violated_flag::Vector{Bool}
         """
         JDXfile()
-        JDXreader obj constructor, creates empty object with no data
+JDXreader obj constructor, creates empty object with no data
     """
         JDXfile()=begin
             new("",
@@ -334,7 +337,7 @@ function prepare_jdx_data(x::Vector{Float64},y::Vector{Float64},x_units::String=
     """
     write_jdx_file(file_name,jdx::JDXfile; kwargs...)
 
-    Writes [`JDXfile`](@ref) object to file
+Writes [`JDXfile`](@ref) object to file
 """
 write_jdx_file(file_name,jdx::JDXfile; kwargs...) = write_jdx_file(file_name,jdx.x_data,
                                                                         jdx.y_data,
@@ -344,28 +347,40 @@ write_jdx_file(file_name,jdx::JDXfile; kwargs...) = write_jdx_file(file_name,jdx
    """
     write_jdx_file(jdx::JDXfile; kwargs...)
 
-    Writes [`JDXfile`](@ref) object to file
+Writes [`JDXfile`](@ref) object to file
 """
 write_jdx_file(jdx::JDXfile; kwargs...) = write_jdx_file(jdx.file_name,jdx; kwargs...)                                                                  
     """
-    read_jdx_file(file_name::String)
+    read_jdx_file(file_name::String;delimiter=" ")
 
-    Read JCAMP format file file_name - full file name,
-    Input arguments: 
-        file_name - full file name
-    returns named tuple with fields:
-           x - coordinate (wavelength, wavenumber or other)
-           y - data
-           headers - dictionary in "String => value" format with 
-           headers values  
+    Reads JCAMP-DX format file
+
+Input arguments: 
+file_name - full file name
+(optional) - delimiter 
+returns named tuple with fields:
+x - coordinate (wavelength, wavenumber or other)
+
+y - data
+
+headers - dictionary in "String => value" format with headers values 
+
+is_violated - is the Vector of Bool, if `is_violated[ind]` is `true` than control x-value
+which stay at the `ind`'th  `line of data` in the file differs from the corresponding 
+value of generated x-coordinate array by more than $(X_VIOLATION_CRITERIA). The `line of data`
+index are the indces from 1 to `data_lines_number` where 
+`data_lines_number=total_lines_number - (header_lines_number +1)`
+`header_lines_number` is the number of headers keys, `total_lines_number` - is the total number of
+lines in file (+1 stays to count the last line of file, which contains `#end=`  ) 
+lines in file , see also [`read!`](@ref) and [`JDXfile`](@ref)
 """
-    function read_jdx_file(file_name::String)
-        return file_name |> JDXfile |> read!
+    function read_jdx_file(file_name::String;delimiter = " ")
+        return file_name |> JDXfile |> t-> read!(t,delimiter=delimiter)
     end
     """
     JDXfile(file_name::String)
 
-    Creates JDXreader object from full file name 
+Creates JDXreader object from full file name 
 """
     function JDXfile(file_name::String) # external constructor
         if !isfile(file_name)
@@ -387,23 +402,37 @@ write_jdx_file(jdx::JDXfile; kwargs...) = write_jdx_file(jdx.file_name,jdx; kwar
             jdx.data_headers[string(splitted_string[1])] = 
                 isnothing(tryparse(Float64,splitted_string[2])) ? string(splitted_string[2]) : parse(Float64,splitted_string[2])
         end
-        #if haskey(jdx.data_headers,"NPOINTS")
-        #    jdx.data_headers["NPOINTS"] = round(Int64, jdx.data_headers["NPOINTS"])
-        #end
     end
-    function addYline!(jdx::JDXfile, current_line::String,number_of_y_point_per_chunk,chunk_index)
-        data_intermediate = map((X)->Base.parse(Float64,X), split(current_line))
+    """
+    addYline!(jdx::JDXfile, current_line::String,number_of_y_point_per_chunk,chunk_index; delimiter::String=" ")
+
+This function parses `current_line` string of file and fills the parsed data to the y-vector of `jdx`  object
+`number_of_y_point_per_chunk` - the number of data point (excluding the x-coordinate) in the line 
+`chunk_index`  - the index of chunk 
+`delimiter`   - data points delimiter used in `split` function
+"""
+function addYline!(jdx::JDXfile, current_line::String,number_of_y_point_per_chunk,chunk_index; delimiter::String=" ")
+        data_chunk = Vector{Float64}(undef,number_of_y_point_per_chunk+1)
+        for (i,s) in enumerate(eachsplit(current_line,delimiter))
+            d = Base.tryparse(Float64,s)
+            !isnothing(d) ? data_chunk[i] = d : data_chunk[i] = -1.0
+        end
         starting_index =1+ (chunk_index-1)*number_of_y_point_per_chunk
-        jdx.y_data[starting_index:starting_index+number_of_y_point_per_chunk-1] = data_intermediate[2:end]
-        return data_intermediate[1] # returns x-value for checks
+        jdx.y_data[starting_index:starting_index+number_of_y_point_per_chunk-1] = data_chunk[2:end]
+        return data_chunk[1] # returns x-value for checks
     end
-    function addYline!(jdx::JDXfile, current_line::String)
-        data_intermediate = map((X)->Base.parse(Float64,X), split(current_line))
+    function addYline!(jdx::JDXfile, current_line::String; delimiter::String=" ")
+        data_intermediate = map((X)->Base.parse(Float64,X), split(current_line,delimiter))
         resize!(jdx.y_data,0)
         append!(jdx.y_data,data_intermediate[2:end])
-        return data_intermediate[1] # returns x-value for checks
+        return data_intermediate[1]::Float64 # returns x-value for checks
     end
-    function generateXvector!(jdx::JDXfile)
+    """
+    generateXvector!(jdx::JDXfile)
+
+Generates equally spaced x-vector 
+"""
+function generateXvector!(jdx::JDXfile)
             point_number = round(Int64,jdx.data_headers["NPOINTS"])
             starting_X = haskey(jdx.data_headers,"FIRSTX") ? jdx.data_headers["FIRSTX"] : 0.0
             if haskey(jdx.data_headers,"DELTAX")
@@ -416,13 +445,13 @@ write_jdx_file(jdx::JDXfile; kwargs...) = write_jdx_file(jdx.file_name,jdx; kwar
                 end
             end
             resize!(jdx.x_data,point_number)
-            jdx.x_data .= [starting_X + i*step_value for i in 0:point_number-1]
+            map!(i->starting_X + i*step_value,jdx.x_data,0:point_number-1)
     end
 
     """
     parse_headers(file::String)
 
-    Parses headers from JCAMP-DX file
+Parses headers from JCAMP-DX file
 """
 parse_headers(file::String) = file |> JDXfile |>  parse_headers!
 
@@ -439,22 +468,23 @@ parse_headers(file::String) = file |> JDXfile |>  parse_headers!
     """
     read!(jdx::JDXfile)
 
-fills precreated JDXfile object
+fills precreated JDXfile object see [`JDXfile`](@ref)
 """
-function read!(jdx::JDXfile)
+function read!(jdx::JDXfile; delimiter=" ")
         if !isfile(jdx.file_name)
             return nothing
         end
         header_lines = Vector{String}()
         total_number_Of_lines = countlines(jdx.file_name)
         x_point =0.0;
-        jdx.y_data = Vector{Float64}()
+        #jdx.y_data = Vector{Float64}()
+        
         open(jdx.file_name) do io_file
-            x_point=0.0
-            for ln in eachline(io_file)
+            x_point = 0.0
+            for ln in eachline(io_file) #scans only headers and the first line of data
                 if ln[1]!='#'
-                    x_point = addYline!(jdx, ln)
-                    break
+                    x_point = addYline!(jdx, ln,delimiter = delimiter)
+                    break # parsing the first line
                 else
                     push!(header_lines,ln)
                 end
@@ -462,32 +492,43 @@ function read!(jdx::JDXfile)
             parseJDXheaders(jdx,header_lines)
             number_of_y_point_per_chunk = length(jdx.y_data)
             data_lines_number = total_number_Of_lines - length(header_lines)-1 # last line is ignored
+            
             if haskey(jdx.data_headers,"NPOINTS") # correct JDX file
-                total_point_number = round(Int64,jdx.data_headers["NPOINTS"])
+                total_point_number = round(Int64,jdx.data_headers["NPOINTS"]) # total number of points is known
+                jdx.is_violated_flag = Vector{Bool}(undef,data_lines_number)
                 generateXvector!(jdx)
                 resize!(jdx.y_data,total_point_number)
+                x_gen = jdx.x_data[1] # generated x to compare
+                jdx.is_violated_flag[1] = !isapprox(x_gen, x_point,rtol=X_VIOLATION_CRITERIA)
                 for i in 2:data_lines_number
-                    x_point = addYline!(jdx,readline(io_file),number_of_y_point_per_chunk,i)
+                    x_point = addYline!(jdx,readline(io_file),number_of_y_point_per_chunk,i,delimiter=delimiter)
+                    x_gen = jdx.x_data[(i-1)*number_of_y_point_per_chunk + 1] #generated x
+                    jdx.is_violated_flag[i] =  !isapprox(x_gen, x_point,rtol=X_VIOLATION_CRITERIA)
                 end
             else number_of_y_point_per_chunk==1 # file with two columns like CSV
                 total_point_number = data_lines_number
+                jdx.is_violated_flag = Vector{Bool}(undef,1)
                 resize!(jdx.y_data,total_point_number)
                 jdx.x_data = similar(jdx.y_data)
                 jdx.x_data[1] = x_point
                 for i in 2:data_lines_number
                     ln = readline(io_file)
-                    jdx.x_data[i] = addYline!(jdx,ln,1,i)
+                    jdx.x_data[i] = addYline!(jdx,ln,1,i,delimiter=delimiter)
                 end
+                jdx.is_violated_flag[1]=false
             end
 
         end 
+        is_violated = any(jdx.is_violated_flag)
+        !is_violated ? nothing : @warn "x is violated at $(sum(jdx.is_violated_flag)) points"
         if haskey(jdx.data_headers,"YFACTOR") 
-            y_factor = jdx.data_headers["YFACTOR"] 
+            y_factor::Float64 = jdx.data_headers["YFACTOR"] 
             jdx.y_data .*= y_factor
         end        
         return (x=jdx.x_data,
                 y=jdx.y_data, 
-                headers=jdx.data_headers)
+                headers=jdx.data_headers,
+                is_violated = jdx.is_violated_flag)
     end
     
 

@@ -19,7 +19,7 @@ makedocs(
                  ] =#
 )
 deploydocs(;
-                repo="github.com/Manarom/JCAMPDXir.jl", 
+                repo="https://github.com/Manarom/JCAMPDXir.jl/blob/{commit}{path}#{line}", 
                 devbranch = "main",
                 devurl="dev",
                 target = "build",
