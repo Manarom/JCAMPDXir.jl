@@ -1,6 +1,24 @@
 using JCAMPDXir,DelimitedFiles,Interpolations
 using Test
+using GitHub,Downloads
 test_data_folder = joinpath(@__DIR__(),"tests data")
+python_package_test_data = joinpath(test_data_folder,"jcamp_python")
+#cheking files from jcamp repository for python
+owner = "nzhagen"
+repo = "jcamp"
+path = "data/infrared_spectra"
+R = GitHub.repo(joinpath(owner,repo))
+files, _ = GitHub.directory(R, path)
+files_from_jcamp_py = filter(r->occursin(".jdx",r), readdir(python_package_test_data))
+for f in files
+    fname = f.name
+    !occursin(".jdx",fname) || fname ∈ files_from_jcamp_py ? continue : nothing
+    
+    Downloads.download(string(f.download_url),joinpath(python_package_test_data,fname))
+end
+
+
+
 test_file = joinpath(test_data_folder,"JCAMP_test_file.jdx") # this file containes testing spectra in JCAMP-DX specification
 no_headers_file = joinpath(test_data_folder,"test_file_no_headers.txt") # data without headers
 written_file_name = joinpath(test_data_folder,"written.jdx")
@@ -19,6 +37,19 @@ KM2T(x) = begin # function to convert Kubelka-Munk to transmittance
     return  @. 10^(-x) #A = log10(I0/I) = -log10(T) => T=10^(-A)
 end
 @testset "JCAMPDXir.jl" begin
+    println("\ntesting files from $(python_package_test_data)" )
+    for f in files_from_jcamp_py
+
+        if !JCAMPDXir.is_supported_jdx_format(joinpath(python_package_test_data,f))
+            continue
+        end
+       try 
+            JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,f))
+            @test true
+       catch 
+            @test false
+       end
+    end
     println("\nTesting by writing and reading the same data")
     data = JCAMPDXir.read_jdx_file(test_file) # reading test file
     x_units = data.headers["XUNITS"] # x units of loaded data

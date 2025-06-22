@@ -2,7 +2,7 @@
 # module to read JCAMP-DX=4.24 file formats
 
 module JCAMPDXir
-using Dates,Interpolations,OrderedCollections,Printf
+using Dates,Interpolations,OrderedCollections,Printf,StaticArrays
 export JDXfile,
             read!,
             read_jdx_file,
@@ -78,6 +78,7 @@ JCAMPDXir
     const supported_x_units = join(keys(xSTR2NUM),",");
     const supported_y_units = join(keys(ySTR2NUM),",");
     const X_VIOLATION_CRITERIA = 1e-2
+    const SUPPORTED_JCAMPDX_VERSION =4.24
     abstract type sUnits{T} end
     struct yUnits{T}<:sUnits{T}
         yUnits(u::String) = begin
@@ -92,6 +93,25 @@ JCAMPDXir
     units(::xUnits{T}) where T = xNUM2STR[T]
     units(::yUnits{T}) where T = yNUM2STR[T]
 
+    macro tuple_unpack(N::Int, x)
+        @assert N >= 1
+        expr = Expr(:tuple)
+        push!(expr.args, quote
+          begin
+            (val, state) = iterate($(esc(x)))
+            val
+          end
+        end)
+        for i = 2:N
+          push!(expr.args, quote
+            begin
+              (val, state) = iterate($(esc(x)), state)
+              val
+            end
+          end)
+        end
+        expr
+    end
     """
     convert!(x::AbstractArray,::sUnits{T},::sUnits{T}) where T
 
@@ -395,12 +415,16 @@ Creates JDXreader object from full file name
             name = strip(head,'#')
             name = strip(name,'$')
             splitted_string = split(name,"=")
-            if length(splitted_string)!=2
-                jdx.data_headers[name] = name
+            splits_number = length(splitted_string)
+            if splits_number==1
+                jdx.data_headers[string(name)] = string(name)
                 continue
-            end
-            jdx.data_headers[string(splitted_string[1])] = 
-                isnothing(tryparse(Float64,splitted_string[2])) ? string(splitted_string[2]) : parse(Float64,splitted_string[2])
+            elseif splits_number==2
+                jdx.data_headers[String(splitted_string[1])] = 
+                isnothing(tryparse(Float64,splitted_string[2])) ? string(splitted_string[2]) : parse(Float64,splitted_string[2])  
+            else
+                jdx.data_headers[String(splitted_string[1])] = join(splitted_string[2:end],"=")
+            end 
         end
     end
     """
@@ -412,20 +436,73 @@ This function parses `current_line` string of file and fills the parsed data to 
 `delimiter`   - data points delimiter used in `split` function
 """
 function addYline!(jdx::JDXfile, current_line::String,number_of_y_point_per_chunk,chunk_index; delimiter::String=" ")
-        data_chunk = Vector{Float64}(undef,number_of_y_point_per_chunk+1)
-        for (i,s) in enumerate(eachsplit(current_line,delimiter))
+        
+        current_line[1]!='#' || length(current_line)>1 ?  nothing : return 
+        
+        data_chunk = MVector{number_of_y_point_per_chunk+1,Float64}(undef)
+        #fill!(data_chunk,NaN)
+        chunk_counter=0
+        for s in eachsplit(current_line,delimiter)
             d = Base.tryparse(Float64,s)
-            !isnothing(d) ? data_chunk[i] = d : data_chunk[i] = -1.0
+            if !isnothing(d) 
+                chunk_counter +=1
+                data_chunk[chunk_counter] = d
+            elseif occursin('-',s)
+                for (i,sm) in enumerate(eachsplit(s,'-'))
+                    chunk_counter +=1
+                    data_chunk[chunk_counter] = i>1 ? -Base.parse(Float64,sm) : Base.parse(Float64,sm)
+                end
+            else
+                chunk_counter +=1
+                data_chunk[chunk_counter] = NaN
+            end
         end
+
+        number_of_y_point_per_chunk = chunk_counter -1
         starting_index =1+ (chunk_index-1)*number_of_y_point_per_chunk
-        jdx.y_data[starting_index:starting_index+number_of_y_point_per_chunk-1] = data_chunk[2:end]
+        v = @view jdx.y_data[starting_index : starting_index + number_of_y_point_per_chunk - 1]
+        y_data_chunk =@view data_chunk[2:chunk_counter]
+        copyto!(v,y_data_chunk)
+
         return data_chunk[1] # returns x-value for checks
     end
-    function addYline!(jdx::JDXfile, current_line::String; delimiter::String=" ")
-        data_intermediate = map((X)->Base.parse(Float64,X), split(current_line,delimiter))
+    # only for the first line 
+    function addYline!(jdx::JDXfile, current_line::String;
+                                     delimiter::String=" ")
+
+        current_line[1]!='#' || length(current_line)>1 ?  nothing : return NaN
         resize!(jdx.y_data,0)
-        append!(jdx.y_data,data_intermediate[2:end])
-        return data_intermediate[1]::Float64 # returns x-value for checks
+        x_start = 0.0
+        for (i,s) in enumerate(eachsplit(current_line,delimiter))
+          if i==1
+            if !occursin('-',s)
+                x_start = Base.parse(Float64,s)
+            else
+                for (k,sm) in enumerate(eachsplit(s,'-'))
+                    if k>1 
+                        push!(jdx.y_data,Base.parse(Float64,sm))
+                        jdx.y_data[end] *=-1 
+                    else
+                        x_start = Base.parse(Float64,sm)
+                    end
+                end
+            end
+            continue
+          end       
+          if !occursin('-',s)
+            push!(jdx.y_data,Base.parse(Float64,s))
+            continue
+          end
+          for (k,sm) in enumerate(eachsplit(s,'-'))
+            push!(jdx.y_data,Base.parse(Float64,sm))
+            k > 1 ? jdx.y_data[end] *=-1 : continue
+          end
+          
+        end
+        #data_intermediate = map((X)->Base.parse(Float64,X), split(current_line,delimiter))
+        
+        #append!(jdx.y_data,data_intermediate[2:end])
+        return x_start#[1]::Float64 # returns x-value for checks
     end
     """
     generateXvector!(jdx::JDXfile)
@@ -456,43 +533,77 @@ Parses headers from JCAMP-DX file
 parse_headers(file::String) = file |> JDXfile |>  parse_headers!
 
     function parse_headers!(jdx::JDXfile)
-        open(jdx.file_name) do io
-            header_lines = Vector{String}()
-            for ln in eachline(io)
-                ln[1]=='#' ? push!(header_lines,ln) : break
-            end
-            parseJDXheaders(jdx,header_lines)
-        end
+        read!(jdx; only_headers=true)
         return jdx.data_headers
     end
+
+    function is_supported_jdx_format(file_name::AbstractString)
+        headers = parse_headers(file_name)
+        return haskey(headers,"JCAMP-DX") && isa(headers["JCAMP-DX"],Number) && headers["JCAMP-DX"]<=SUPPORTED_JCAMPDX_VERSION
+    end
+
     """
     read!(jdx::JDXfile)
 
 fills precreated JDXfile object see [`JDXfile`](@ref)
 """
-function read!(jdx::JDXfile; delimiter=" ")
+function read!(jdx::JDXfile; delimiter=" ",only_headers::Bool=false)
         if !isfile(jdx.file_name)
             return nothing
         end
         header_lines = Vector{String}()
-        total_number_Of_lines = countlines(jdx.file_name)
+        total_number_of_lines = countlines(jdx.file_name)
         x_point =0.0;
         #jdx.y_data = Vector{Float64}()
         
         open(jdx.file_name) do io_file
             x_point = 0.0
+            is_data_started = false # tru if data block is already started
+            header_lines_counter = 0
             for ln in eachline(io_file) #scans only headers and the first line of data
-                if ln[1]!='#'
-                    x_point = addYline!(jdx, ln,delimiter = delimiter)
-                    break # parsing the first line
+                if ln[1]!='#' 
+                    if is_data_started # reading the first line to get the number of point et.c.
+                        if !only_headers
+                            x_point = addYline!(jdx, ln,delimiter = delimiter)
+                        end
+                        break # parsing the first line
+                    else # it is possible that the header is multilined, in this case we 
+                        ln_total = header_lines[end]    
+                        #  taking previous vector element
+                        #  as the multiline starting content
+                        ln_cur=""
+                        for ln_cur in eachline(io_file)
+                            ln_cur[1]!='#' ?  ln_total *=" "*ln_cur : break
+                            header_lines_counter+=1
+                        end
+                        push!(header_lines,ln_total)
+                        header_lines_counter+=1
+                        push!(header_lines,ln_cur)
+                    end
                 else
+                    !is_data_started ? is_data_started = occursin("##XYDATA",ln) : nothing # check if data is already started
+                    header_lines_counter+=1
                     push!(header_lines,ln)
                 end
             end
+
             parseJDXheaders(jdx,header_lines)
-            number_of_y_point_per_chunk = length(jdx.y_data)
-            data_lines_number = total_number_Of_lines - length(header_lines)-1 # last line is ignored
-            
+            if only_headers
+                return (x=Vector{Float64}([]),
+                        y=Vector{Float64}([]), 
+                        headers=jdx.data_headers,
+                        is_violated = false)
+            end
+            number_of_y_point_per_chunk = length(jdx.y_data) # number of numeric points per line
+            # by default we assume that the last line is ##END= thus it is ignored
+            data_lines_number = total_number_of_lines - header_lines_counter - 1 # last line is ignored
+#=
+@show data_lines_number
+@show header_lines_counter
+@show total_number_of_lines
+@show number_of_y_point_per_chunk
+=#
+
             if haskey(jdx.data_headers,"NPOINTS") # correct JDX file
                 total_point_number = round(Int64,jdx.data_headers["NPOINTS"]) # total number of points is known
                 jdx.is_violated_flag = Vector{Bool}(undef,data_lines_number)
@@ -502,8 +613,15 @@ function read!(jdx::JDXfile; delimiter=" ")
                 jdx.is_violated_flag[1] = !isapprox(x_gen, x_point,rtol=X_VIOLATION_CRITERIA)
                 for i in 2:data_lines_number
                     x_point = addYline!(jdx,readline(io_file),number_of_y_point_per_chunk,i,delimiter=delimiter)
-                    x_gen = jdx.x_data[(i-1)*number_of_y_point_per_chunk + 1] #generated x
-                    jdx.is_violated_flag[i] =  !isapprox(x_gen, x_point,rtol=X_VIOLATION_CRITERIA)
+                    if !isnan(x_point)
+                        x_gen = jdx.x_data[(i-1)*number_of_y_point_per_chunk + 1] #generated x
+                        jdx.is_violated_flag[i] =  !isapprox(x_gen, x_point,rtol=X_VIOLATION_CRITERIA)
+                    else
+                        l = length(jdx.is_violated_flag)
+                        deleteat!(jdx.is_violated_flag,i:l)
+                        break
+                    end       
+
                 end
             else number_of_y_point_per_chunk==1 # file with two columns like CSV
                 total_point_number = data_lines_number
@@ -513,7 +631,8 @@ function read!(jdx::JDXfile; delimiter=" ")
                 jdx.x_data[1] = x_point
                 for i in 2:data_lines_number
                     ln = readline(io_file)
-                    jdx.x_data[i] = addYline!(jdx,ln,1,i,delimiter=delimiter)
+                     x_out = addYline!(jdx,ln,1,i,delimiter=delimiter)
+                     !isnan(x_out) ? jdx.x_data[i] = x_out : nothing
                 end
                 jdx.is_violated_flag[1]=false
             end
