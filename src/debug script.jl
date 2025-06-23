@@ -2,10 +2,10 @@
 using Revise, Plots,OrderedCollections
 includet("JCAMPDXir.jl")
 line = "575.17-3042244 1597332-970474 1254921-1092859 2206136"
-jdx = JCAMPDXir.JDXfile()
-JCAMPDXir.addYline!(jdx,line)
+jdx = JCAMPDXir.JDXblock()
+JCAMPDXir.addXYYline!(jdx,line)
 jdx.y_data
-data = JCAMPDXir.read_jdx_file(raw"D:\JuliaDepoth\dev\JCAMPDXir.jl\test\tests data\jcamp_python\1-butanol.jdx") # reading test file
+data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,"1-butanol.jdx")) # reading test file
 plot(data.x,data.y)
 
 
@@ -38,16 +38,17 @@ end
 problem_files_index[2]
 error_counter
 println("error $(100*error_counter/length(files_from_jcamp_py)) %")
-files_from_jcamp_py[36]
-data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,files_from_jcamp_py[36])) # reading test file
+files_from_jcamp_py[42]
+data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,files_from_jcamp_py[62])) # reading test file
 plot(data.x,data.y)
-data.y[end-5]
+data.y[end]
 
 data_headers = JCAMPDXir.parse_headers(joinpath(python_package_test_data,files_from_jcamp_py[36]))
 
-data = JCAMPDXir.read_jdx_file(raw"D:\JuliaDepoth\dev\JCAMPDXir.jl\test\tests data\jcamp_python\ethane.jdx")
+data = JCAMPDXir.read_jdx_file(raw".\test\tests data\jcamp_python\ethane.jdx")
 plot(data.x,data.y)
 data.headers
 
-T_data = JCAMPDXir.read_jdx_file(raw"D:\JuliaDepoth\dev\JCAMPDXir.jl\test\tests data\JDX-nicolet.JDX",delimiter=" ") 
+T_data = JCAMPDXir.read_jdx_file(raw".\test\tests data\jcamp_python\example_compound_file.jdx") 
 plot(T_data.x,T_data.y)
+data.headers["NPOINTS"]
