@@ -49,5 +49,5 @@ data = JCAMPDXir.read_jdx_file(raw"D:\JuliaDepoth\dev\JCAMPDXir.jl\test\tests da
 plot(data.x,data.y)
 data.headers
 
-T_data = JCAMPDXir.read_jdx_file(raw"D:\JuliaDepoth\dev\JCAMPDXir.jl\test\tests data\transmittance.txt",delimiter="\t") 
+T_data = JCAMPDXir.read_jdx_file(raw"D:\JuliaDepoth\dev\JCAMPDXir.jl\test\tests data\JDX-nicolet.JDX",delimiter=" ") 
 plot(T_data.x,T_data.y)

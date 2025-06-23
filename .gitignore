@@ -1,4 +1,4 @@
 /Manifest*.toml
 /.vscode/*
 /test/tests data/written.jdx
-/src/debug_script.jl
+#/src/debug_script.jl
