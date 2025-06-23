@@ -472,21 +472,21 @@ function addXYYline!(jdx::JDXblock, current_line::String,number_of_y_point_per_c
 
 Function splits string with digits separated by multiple patterns
 """
-function split_PAC_string!(a::AbstractArray,offset_index::Int,s::AbstractString, pattern::Regex=r"[+-]")
+function split_PAC_string!(a::AbstractArray,starting_index::Int,s::AbstractString, pattern::Regex=r"[+-]")
         s = strip(s)
         offsets = [x.offset for x in eachmatch(pattern, s)]
         N = length(offsets)
         if N==0 
             val =  Base.tryparse(Float64,s)
-            !isnothing(val) ? a[1]=val : return 1
-            return 1
+            !isnothing(val) ? a[1]=val : return starting_index+1
+            return starting_index+1
         end
         if offsets[1]==1
             starting_counter  = 2
         else
             starting_counter = 1
         end
-        counter=1
+        counter=starting_index
         start_index = 1
         for ii in starting_counter:N
             stop_index = offsets[ii]-1
