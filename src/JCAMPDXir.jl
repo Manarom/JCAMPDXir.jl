@@ -447,16 +447,13 @@ function addXYYline!(jdx::JDXblock, current_line::String,number_of_y_point_per_c
         #fill!(data_chunk,NaN)
         chunk_counter=0
         for s in eachsplit(current_line,delimiter)
-            d = Base.tryparse(Float64,s)
-            if !isnothing(d) 
+            # d = Base.tryparse(Float64,s)
+            if !is_PAC_string(s) 
                 chunk_counter +=1
-                data_chunk[chunk_counter] = d
-            elseif occursin('-',s)
-                for (i,sm) in enumerate(eachsplit(s,'-'))
-                    chunk_counter +=1
-                    data_chunk[chunk_counter] = i>1 ? -Base.parse(Float64,sm) : Base.parse(Float64,sm)
-                end
+                data_chunk[chunk_counter] = Base.parse(Float64,s)
             else
+                out = 
+                
                 chunk_counter +=1
                 data_chunk[chunk_counter] = NaN
             end
@@ -470,13 +467,42 @@ function addXYYline!(jdx::JDXblock, current_line::String,number_of_y_point_per_c
 
         return data_chunk[1] # returns x-value for checks
     end
-
     """
     split_PAC_string(s::String, pattern::Regex=r"[+-]")
 
 Function splits string with digits separated by multiple patterns
 """
-function split_PAC_string(s::String, pattern::Regex=r"[+-]")
+function split_PAC_string!(a::AbstractArray,offset_index::Int,s::AbstractString, pattern::Regex=r"[+-]")
+        s = strip(s)
+        offsets = [x.offset for x in eachmatch(pattern, s)]
+        N = length(offsets)
+        if N==0 
+            val =  Base.tryparse(Float64,s)
+            !isnothing(val) ? a[1]=val : return 1
+            return 1
+        end
+        if offsets[1]==1
+            starting_counter  = 2
+        else
+            starting_counter = 1
+        end
+        counter=1
+        start_index = 1
+        for ii in starting_counter:N
+            stop_index = offsets[ii]-1
+            a[counter] = Base.parse(Float64,s[start_index:stop_index]) 
+            start_index = 1 + stop_index 
+            counter +=1
+        end
+        a[counter] = Base.parse(Float64,s[start_index:end])
+        return counter
+    end
+    """
+    split_PAC_string(s::String, pattern::Regex=r"[+-]")
+
+Function splits string with digits separated by multiple patterns
+"""
+function split_PAC_string(s::AbstractString, pattern::Regex=r"[+-]")
         s = strip(s)
         offsets = [x.offset for x in eachmatch(pattern, s)]
         N = length(offsets)
@@ -500,56 +526,28 @@ function split_PAC_string(s::String, pattern::Regex=r"[+-]")
         push!(parts, Base.parse(Float64,s[start_index:end])) 
         return parts
     end
+    is_PAC_string(s::AbstractString) = occursin('-',s) || !occursin('+',s)
     # only for the first line 
     function addXYYline!(jdx::JDXblock, current_line::String;
-                                     delimiter::String=" ")
+                                     delimiter::String=" ",is_first_line::Bool=true)
 
         current_line[1]!='#' || length(current_line)>1 ?  nothing : return NaN
-        resize!(jdx.y_data,0)
+        !is_first_line || resize!(jdx.y_data,0)
         x_start = 0.0
         for (i,s) in enumerate(eachsplit(current_line,delimiter))
-          if i==1 # first element of splitted string by delimiter
-            if !occursin('-',s) && !occursin('+',s) # in PAC form the delimiter may be replaced by the sign
-                x_start = Base.parse(Float64,s)
+            is_first_split = i==1
+            if !is_PAC_string(s) # in PAC form the delimiter may be replaced by the sign
+                is_first_split ? x_start = Base.parse(Float64,s) : push!(jdx.y_data,Base.parse(Float64,s))
             else # there is possibly a PAC vecsion...
-                if !occursin('-',s) #only pluses
-                    for sm in eachsplit(s,'+')
-                        length(sm)==0 ? continue : push!(jdx.y_data,Base.parse(Float64,sm))
-                    end
-                    continue
-                end
-                for (k,sm) in enumerate(eachsplit(s,'-'))
-                    if k>1 
-                        push!(jdx.y_data,Base.parse(Float64,sm))
-                        jdx.y_data[end] *=-1 
-                    else
-                        x_start = Base.parse(Float64,sm)
-                    end
-                end
-            end
-            continue
-          end  # endof firs-split-specific check      
-          if !occursin('-',s) && !occursin('+',s)  # there is no negative values in data
-            push!(jdx.y_data,Base.parse(Float64,s))
-            continue
-          else # there is a possibility that the negative or positive data is written with white space in this case 
-            # each split by space should be parsed  as neagtive value it is ok
-             val = tryparse(Float64,s)  
-             if !isnothing(val)
-                push!(jdx.y_data,val)
-                continue
-             end
-          end
-          for (k,sm) in enumerate(eachsplit(s,'-'))
-            push!(jdx.y_data,Base.parse(Float64,sm))
-            k > 1 ? jdx.y_data[end] *=-1 : continue
-          end
-          
+                out = split_PAC_string(s)
+                @show out
+                N = length(out)
+                N>=1 || continue
+                is_first_split ? x_start = out[1] : push!(jdx.y_data,out[1])
+                N<1 || append!(jdx.y_data,out[2:end])
+            end  
         end
-        #data_intermediate = map((X)->Base.parse(Float64,X), split(current_line,delimiter))
-        
-        #append!(jdx.y_data,data_intermediate[2:end])
-        return x_start#[1]::Float64 # returns x-value for checks
+        return x_start # returns x-value for checks
     end
     """
     generateXvector!(jdx::JDXblock)
