@@ -46,7 +46,8 @@ end
        try 
             JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,f))
             @test true
-       catch 
+       catch ex
+            @show ex.message
             @test false
        end
     end

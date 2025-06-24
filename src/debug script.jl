@@ -1,16 +1,18 @@
 #debug script
 using Revise, Plots,OrderedCollections
+test_data_folder = joinpath(".","test","tests data")
+python_package_test_data = joinpath(test_data_folder,"jcamp_python")
 includet("JCAMPDXir.jl")
 line = "575.17-3042244 1597332-970474 1254921-1092859 2206136"
 jdx = JCAMPDXir.JDXblock()
 JCAMPDXir.addXYYline!(jdx,line)
 jdx.y_data
-data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,"1-butanol.jdx")) # reading test file
+data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,"benzene.jdx")) # reading test file
 plot(data.x,data.y)
+a = [1.0; 1.0; 1.0; 1.0; 1.0]
+JCAMPDXir.split_PAC_string!(a,3,"+345-23.0-4")
+a
 
-
-test_data_folder = joinpath(".","test","tests data")
-python_package_test_data = joinpath(test_data_folder,"jcamp_python")
 files_from_jcamp_py = filter(r->occursin(".jdx",r), readdir(python_package_test_data))
 println("\ntesting files from $(python_package_test_data)" )
 readed_num = length(files_from_jcamp_py)
@@ -19,7 +21,6 @@ problem_files_index = OrderedDict{Int,Pair{Int,String}}()
 error_counter = 0
 for (i,f) in enumerate(files_from_jcamp_py)
     file_headers = JCAMPDXir.parse_headers(joinpath(python_package_test_data,f))
-
     if haskey(file_headers,"JCAMP-DX") && isa(file_headers["JCAMP-DX"],Number) && file_headers["JCAMP-DX"]<=4.24
         @show file_headers["JCAMP-DX"]
     else
@@ -31,15 +32,14 @@ for (i,f) in enumerate(files_from_jcamp_py)
         bt = backtrace()
         msg = sprint(showerror, ex, bt)
         error_counter +=1
-
         push!(problem_files_index,error_counter=>Pair(i,msg))
     end
 end
-problem_files_index[2]
+problem_files_index[1]
 error_counter
 println("error $(100*error_counter/length(files_from_jcamp_py)) %")
-files_from_jcamp_py[42]
-data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,files_from_jcamp_py[62])) # reading test file
+files_from_jcamp_py[2]
+data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,files_from_jcamp_py[2])) # reading test file
 plot(data.x,data.y)
 data.y[end]
 

@@ -439,44 +439,47 @@ This function parses `current_line` string of file and fills the parsed data to 
 `chunk_index`  - the index of chunk 
 `delimiter`   - data points delimiter used in `split` function
 """
-function addXYYline!(jdx::JDXblock, current_line::String,number_of_y_point_per_chunk,chunk_index; delimiter::String=" ")
+function addXYYline!(jdx::JDXblock, current_line::String,
+                                number_of_y_point_per_chunk,
+                                chunk_index; # index of curretn data chunk
+                                delimiter::String=" ")
         
-        current_line[1]!='#' || length(current_line)>1 ?  nothing : return 
-        
+        if current_line[1]=='#'  
+             return NaN
+        end
         data_chunk = MVector{number_of_y_point_per_chunk+1,Float64}(undef)
         #fill!(data_chunk,NaN)
-        chunk_counter=0
+        chunk_counter=1
+        #@show jdx.y_data
         for s in eachsplit(current_line,delimiter)
-            # d = Base.tryparse(Float64,s)
             if !is_PAC_string(s) 
-                chunk_counter +=1
                 data_chunk[chunk_counter] = Base.parse(Float64,s)
-            else
-                out = 
-                
                 chunk_counter +=1
-                data_chunk[chunk_counter] = NaN
+            else
+
+                out = split_PAC_string!(data_chunk,chunk_counter,s)
+                chunk_counter +=out
             end
         end
-
-        number_of_y_point_per_chunk = chunk_counter -1
-        starting_index =1+ (chunk_index-1)*number_of_y_point_per_chunk
-        v = @view jdx.y_data[starting_index : starting_index + number_of_y_point_per_chunk - 1]
-        y_data_chunk =@view data_chunk[2:chunk_counter]
+        cur_points_number = chunk_counter - 1 # total number of numbers in line
+        starting_index = 1 + (chunk_index-1)*number_of_y_point_per_chunk
+        ending_index =  starting_index + cur_points_number - 2
+        v = @view jdx.y_data[ starting_index : ending_index ]
+        y_data_chunk =@view data_chunk[2:cur_points_number]
         copyto!(v,y_data_chunk)
-
         return data_chunk[1] # returns x-value for checks
     end
     """
     split_PAC_string(s::String, pattern::Regex=r"[+-]")
 
-Function splits string with digits separated by multiple patterns
+Function splits string with digits separated by multiple patterns and fills array `a`
+starting from `starting_index` in-place, returns the quantity of numbers parsed from the string
 """
 function split_PAC_string!(a::AbstractArray,starting_index::Int,s::AbstractString, pattern::Regex=r"[+-]")
         s = strip(s)
-        offsets = [x.offset for x in eachmatch(pattern, s)]
+        offsets = [x.offset for x in eachmatch(pattern, s)] # generating array of patterns match
         N = length(offsets)
-        if N==0 
+        if N==0 # there are no patterns
             val =  Base.tryparse(Float64,s)
             !isnothing(val) ? a[1]=val : return starting_index+1
             return starting_index+1
@@ -495,7 +498,7 @@ function split_PAC_string!(a::AbstractArray,starting_index::Int,s::AbstractStrin
             counter +=1
         end
         a[counter] = Base.parse(Float64,s[start_index:end])
-        return counter
+        return counter-starting_index+1
     end
     """
     split_PAC_string(s::String, pattern::Regex=r"[+-]")
@@ -526,21 +529,22 @@ function split_PAC_string(s::AbstractString, pattern::Regex=r"[+-]")
         push!(parts, Base.parse(Float64,s[start_index:end])) 
         return parts
     end
-    is_PAC_string(s::AbstractString) = occursin('-',s) || !occursin('+',s)
+    is_PAC_string(s::AbstractString) = occursin('-',s) || occursin('+',s)
     # only for the first line 
-    function addXYYline!(jdx::JDXblock, current_line::String;
-                                     delimiter::String=" ",is_first_line::Bool=true)
+    function addXYYline!(jdx::JDXblock, 
+                                     current_line::String;
+                                     delimiter::String=" ",
+                                     is_first_line::Bool=true)
 
         current_line[1]!='#' || length(current_line)>1 ?  nothing : return NaN
         !is_first_line || resize!(jdx.y_data,0)
         x_start = 0.0
         for (i,s) in enumerate(eachsplit(current_line,delimiter))
             is_first_split = i==1
-            if !is_PAC_string(s) # in PAC form the delimiter may be replaced by the sign
+            if !is_PAC_string(s) # in PAC form the delimiter may be replaced by the + or - sign
                 is_first_split ? x_start = Base.parse(Float64,s) : push!(jdx.y_data,Base.parse(Float64,s))
-            else # there is possibly a PAC vecsion...
+            else # there is possibly a PAC version...
                 out = split_PAC_string(s)
-                @show out
                 N = length(out)
                 N>=1 || continue
                 is_first_split ? x_start = out[1] : push!(jdx.y_data,out[1])
@@ -548,6 +552,12 @@ function split_PAC_string(s::AbstractString, pattern::Regex=r"[+-]")
             end  
         end
         return x_start # returns x-value for checks
+    end
+    function addXYXYline!(jdx::JDXblock, 
+        current_line::String;
+        delimiter::String=" ",
+        is_first_line::Bool=true)
+        error("addXYXYline! is under construction")
     end
     """
     generateXvector!(jdx::JDXblock)
@@ -659,12 +669,6 @@ function read!(jdx::JDXblock; delimiter=" ",only_headers::Bool=false)
             number_of_y_point_per_chunk = length(jdx.y_data) # number of numeric points per line
             # by default we assume that the last line is ##END= thus it is ignored
             data_lines_number = total_number_of_lines - header_lines_counter - 1 # last line is ignored
-#=
-@show data_lines_number
-@show header_lines_counter
-@show total_number_of_lines
-@show number_of_y_point_per_chunk
-=#
 
             if haskey(jdx.data_headers,"NPOINTS") # correct JDX file
                 total_point_number = round(Int64,jdx.data_headers["NPOINTS"]) # total number of points is known
@@ -675,7 +679,8 @@ function read!(jdx::JDXblock; delimiter=" ",only_headers::Bool=false)
                         x_gen = jdx.x_data[1] # generated x to compare
                         jdx.is_violated_flag[1] = !isapprox(x_gen, x_point,rtol=X_VIOLATION_CRITERIA)
                         for i in 2:data_lines_number
-                            x_point = addXYYline!(jdx,readline(io_file),number_of_y_point_per_chunk,i,delimiter=delimiter)
+                            ln = readline(io_file)
+                            x_point = addXYYline!(jdx,ln,number_of_y_point_per_chunk,i,delimiter=delimiter)
                             if !isnan(x_point)
                                 x_gen = jdx.x_data[(i-1)*number_of_y_point_per_chunk + 1] # generated x
                                 jdx.is_violated_flag[i] =  !isapprox(x_gen, x_point,rtol=X_VIOLATION_CRITERIA)

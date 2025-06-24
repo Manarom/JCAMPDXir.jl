@@ -14,6 +14,20 @@ according to the `JCAMP-DX=4.24`. Full  documentation is available at  [document
 For a detailed overview of the JCAMP-DX infrared format, please refer to
 [JCAMP-DX for infrared 4.24](https://iupac.org/what-we-do/digital-standards/jcamp-dx/)
 
+There is an opensource parser, written in python [jcamp](https://github.com/nzhagen/jcamp.git), 
+examples from this repository were used for testing this package
+
+## Current state of the package
+
+Currently, the package parses JCAMP-DX files written as  '(X++(Y..Y))' format (most common in spectroscopy) 
+in a single block (##TITLE...##END), with a fixed number of values per line except for the last line before
+the '##END' statement. Data may be written separated by specified delimiter, in PAC format or mixed
+
+Under development:
+ - Compound files with multiple data blocks
+ - SQZ and DIF data formats
+
+
 ## Quick start
 
 ```julia
@@ -25,4 +39,4 @@ write_jdx_file(x,y,"MKM","TRANSMITTANCE") # to write x- and y- data vectors
 ```
 
 ## Contact
-To contact me, please do it through the [GitHub repository](https://github.com/Manarom).
+To contact me [GitHub repository](https://github.com/Manarom).
