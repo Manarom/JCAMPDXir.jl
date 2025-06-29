@@ -19,12 +19,12 @@ examples from this repository were used for testing this package
 
 ## Current state of the package
 
-Currently, the package parses JCAMP-DX files written as  '(X++(Y..Y))' format (most common in spectroscopy) 
-in a single block (##TITLE...##END), with a fixed number of values per line except for the last line before
-the '##END' statement. Data may be written separated by specified delimiter, in PAC format or mixed
+Currently, the package parses JCAMP-DX files written in  '(X++(Y..Y))' and '(XY...XY)' format 
+in a single or multiple blocks (##TITLE...##END), with a fixed quantity of numbers per each line except
+for the last line before the '##END' statement. 
+Data may be written separated by specified delimiter, in PAC format or mixed.
 
 Under development:
- - Compound files with multiple data blocks
  - SQZ and DIF data formats
 
 
@@ -34,7 +34,7 @@ Under development:
 import Pkg 
 Pkg.add("https://github.com/Manarom/JCAMPDXir.jl.git")
 using JCAMPDXir
-data = read_jdx_file(file_name) # to read the file, data.x - x-values, data.y - y values
+data = read_jdx_file(file_name) # to read the file, data.x - x-values, data.y - y values 
 write_jdx_file(x,y,"MKM","TRANSMITTANCE") # to write x- and y- data vectors
 ```
 
