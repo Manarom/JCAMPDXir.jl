@@ -72,7 +72,7 @@ end
     println("____________________")    
     println("\nReading XYXYdata")
     data = JCAMPDXir.read_jdx_file(XYXY_test_file) 
-    for (i,y) in enumerate(eachrow([  11995.21 32112;
+    for (i,y) in enumerate(eachrow([11995.21 32112;
                               11991.36 32505;
                               11987.5 32727;
                               11983.64 33481;

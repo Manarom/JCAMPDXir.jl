@@ -98,9 +98,79 @@ JCAMPDXir
     end
     units(::xUnits{T}) where T = xNUM2STR[T]
     units(::yUnits{T}) where T = yNUM2STR[T]
+    # strange symbols
+    """
+    Squezzed from digits dictionary
+
+    """
+    const SQZ_digits = Dict('@'=>"+0", 'A'=>"+1", 'B'=>"+2", 
+                            'C'=>"+3", 'D'=>"+4",'E'=>"+5",
+                            'F'=>"+6", 'G'=>"+7", 'H'=>"+8", 
+                            'I'=>"+9",'a'=>"-1", 'b'=>"-2", 
+                            'c'=>"-3", 'd'=>"-4", 'e'=>"-5", 
+                            'f'=>"-6", 'g'=>"-7", 'h'=>"-8", 
+                            'i'=>"-9")#','=>" " '+'=>"+",  '-'=>"-",  
+                            #','=>" ") misleading with XY...XY delimiter and PAC form
+	const DIF_digits = Dict('%'=>"+0", 'J'=>"+1",  'K'=>"+2",  
+                            'L'=>"+3",  'M'=>"+4",  'N'=>"+5",  
+                            'O'=>"+6",  'P'=>"+7",  'Q'=>"+8",
+                            'R'=>"+9",  'j'=>"-1", 'k'=>"-2", 
+                            'l'=>"-3", 'm'=>"-4", 'n'=>"-5",
+                            'o'=>"-6", 'p'=>"-7", 'q'=>"-8",
+                            'r'=>"-9")
+
+    const DUP_digits = Dict('S'=>1, 'T'=>2, 'U'=>3, 'V'=>4, 
+                            'W'=>5, 'X'=>6, 'Y'=>7, 'Z'=>8,
+                             's'=>9)
+    
+    const SQZ_regexp = Regex("["*join(keys(SQZ_digits))*"]" )
+    const DIF_regexp = Regex("["*join(keys(DIF_digits))*"]" )
+    const DUP_regexp = Regex("["*join(keys(DUP_digits))*"]" )
+
+    """
+Types used to decode the data line before parsing to digits 
+By default there is no decoding `NoDecoding`, but if the first line of data 
+in block contains `SQZ_digits` than it marks entire block as `SQZDecoding`
+by setting the decoding field of `JDXblock` object. String decoding is performed 
+right after the reading the line of data from file.
+
+    """
+    abstract type Decoding end
+    struct SQZDecoding<:Decoding end
+    struct NoDecoding<:Decoding end
+    struct DIFDecoding<:Decoding end
+    struct DUPdecoding<:Decoding end
+    struct DIFDUPDecoing<:Decoding end
+
+    decode(::Type{NoDecoding},s::AbstractString) = s
+    decode(::Type{SQZDecoding},s) = replace(s,SQZ_digits...)
+    decode(::Type{DIFDecoding},s) = replace(s,DIF_digits...)
+    (::Type{T})(s::AbstractString) where T<:Decoding = decode(T,s)
+
+    """
+    is_PAC_string(s::AbstractString)
+
+Checks if string is of PAC format (+ or - signs are used to separate digits)
+"""
+is_PAC_string(s::AbstractString) =occursin('-',s)||occursin('+',s)
+"""
+    is_SQZ_string(s::AbstractString)
+
+Checks if the string is coded using SQZ fomat
+"""
+is_SQZ_string(s::AbstractString) = occursin(SQZ_regexp,s)
+is_DIF_string(s::AbstractString) = occursin(DIF_regexp,s)
+is_DUP_string(s::AbstractString) = occursin(DUP_regexp,s)
+
+function get_decoding_type(s::AbstractString)
+    is_SQZ_string(s) && return SQZDecoding
+    is_DIF_string(s) && is_DUP_string(s) && return DIFDUPDecoing
+    is_DIF_string(s) && return DIFDecoding
+    is_DUP_string(s) && return DUPdecoding
+    return NoDecoding
+end
 
     abstract type DATAline end
-
     struct XYYline<:DATAline end
     struct XYXYline<:DATAline end
 
@@ -357,6 +427,7 @@ Must be filled using [`read!`](@ref) function
         ending_line::IntOrNothing # block ending line index
         xpoints_per_line::IntOrNothing # number of X points in a single line
         ypoints_per_line::IntOrNothing# number of Y points in a single line
+        decoding::Type{T} where T<:Decoding# type of single string decoding
         """
         JDXblock()
 JDXreader obj constructor, creates empty object with no data
@@ -367,7 +438,7 @@ JDXreader obj constructor, creates empty object with no data
                 Vector{Float64}(),
                 Vector{Float64}(),
                 Vector{Bool}(),
-                nothing , nothing, nothing, nothing)
+                nothing , nothing, nothing, nothing,NoDecoding)
         end
     end
     """
@@ -580,7 +651,7 @@ Function splits string with digits separated by multiple patterns and fills arra
 starting from `starting_index` in-place, returns the quantity of numbers parsed from the string
 """
 function split_PAC_string!(a::AbstractArray,starting_index::Int,s::AbstractString,
-     pattern::Regex=r"[+-]")
+            pattern::Regex=r"[+-]")
         s = strip(s)
         offsets = [x.offset for x in eachmatch(pattern, s)] # generating array of patterns match
         N = length(offsets)
@@ -634,7 +705,6 @@ function split_PAC_string(s::AbstractString, pattern::Regex=r"[+-]")
         push!(parts, Base.parse(Float64,s[start_index:end])) 
         return parts
     end
-    is_PAC_string(s::AbstractString) = occursin('-',s) || occursin('+',s)
 
     """
     generateXvector!(jdx::JDXblock)
@@ -707,6 +777,7 @@ function read!(jdx::JDXblock; delimiter=nothing,
                         #  reading the first line to get the number of data points per line et.c.
                         if !only_headers
                             delimiter =  isnothing(delimiter) ? DEFAULT_DELIMITER(line_type) : delimiter
+                            jdx.decoding = get_decoding_type(ln) # filling decoding type
                             x_point = addline!(line_type, jdx, ln, delimiter = delimiter) # this function modifies
                             # jdx file block by setting values to the number of points-per-line properties 
                         end
@@ -766,7 +837,7 @@ function read!(jdx::JDXblock; delimiter=nothing,
                     x_gen = jdx.x_data[1] # generated x to compare
                     jdx.is_violated_flag[1] = !isapprox(x_gen, x_point,rtol=X_VIOLATION_CRITERIA)    
                     for i in 2:data_lines_number
-                        ln = readline(io_file)
+                        ln = jdx.decoding(readline(io_file))
                         x_point = addline!(line_type,jdx,data_chunk_container,ln,i,delimiter=delimiter)
                         if !isnan(x_point)
                             x_gen = jdx.x_data[(i-1)*number_of_y_point_per_chunk + 1] # generated x
@@ -778,8 +849,10 @@ function read!(jdx::JDXblock; delimiter=nothing,
                         end#endif       
                     end#endfor
                 else #XYXYline
+                   #@show jdx
                     for i in 2:data_lines_number
-                        addline!(line_type,jdx,data_chunk_container,readline(io_file),i,delimiter=delimiter)     
+                        ln = jdx.decoding(readline(io_file))
+                        addline!(line_type,jdx,data_chunk_container,ln,i,delimiter=delimiter)     
                     end
                 end
             else number_of_y_point_per_chunk==1 # file with two columns like CSV

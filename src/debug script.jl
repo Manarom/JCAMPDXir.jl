@@ -2,7 +2,7 @@
 using Revise, Plots,OrderedCollections
 test_data_folder = joinpath(".","test","tests data")
 python_package_test_data = joinpath(test_data_folder,"jcamp_python")
-include("JCAMPDXir.jl")
+includet("JCAMPDXir.jl")
 
 line = "575.17-3042244 1597332-970474 1254921-1092859 2206136"
 jdx = JCAMPDXir.JDXblock()
@@ -46,7 +46,7 @@ error_counter
 println("error $(100*error_counter/length(files_from_jcamp_py)) %")
 files_from_jcamp_py[43]
 data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,files_from_jcamp_py[43])) # reading test file
-plot(data.x,data.y)
+plot(data[2].x,data[2].y)
 data.y[end]
 
 data_headers = JCAMPDXir.parse_headers(joinpath(python_package_test_data,files_from_jcamp_py[6]))
