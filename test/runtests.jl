@@ -52,10 +52,12 @@ end
             continue
         end
        try 
+            print("reading $(f) ")
             JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,f))
             @test true
+            print("...ok \n")
        catch ex
-        @show f
+            print("...reading error \n")
             @show ex
             @test false
        end
