@@ -547,7 +547,8 @@ This function parses `current_line` string of file and fills the parsed data to 
 `delimiter`   - data points delimiter used in `split` function
 
 """
-function addline!(::Type{XYYline},jdx::JDXblock, data_chunk::AbstractVector,
+function addline!(::Type{XYYline},jdx::JDXblock, 
+                                data_chunk::AbstractVector,
                                 current_line::String,
                                 line_index::Int; # index of current data chunk
                                 delimiter=isspace) 
@@ -607,11 +608,14 @@ function addline!(::Type{XYYline},jdx::JDXblock, data_chunk::AbstractVector,
 Fills vector from string line splitting it by the delimiter and parsing each value to Float64
 Returns the number for parsed numbers
 """
-function fill_data_chunk!(data_chunk::MVector,current_line,delimiter,chunk_counter::Int=1)
-        #@show jdx.y_data
+function fill_data_chunk!(data_chunk::MVector,current_line,delimiter,
+                                                chunk_counter::Int=1)
         for s in eachsplit(current_line,delimiter)
             s = strip(s)
             !isempty(s) || continue # check for empty string
+            if chunk_counter>length(data_chunk)
+                break
+            end
             if !is_PAC_string(s) 
                 data_chunk[chunk_counter] = Base.parse(Float64,s)
                 chunk_counter += 1
@@ -626,54 +630,90 @@ function fill_data_chunk!(data_chunk::MVector,current_line,delimiter,chunk_count
     fill_data_chunk!(data_chunk::Vector{Float64},current_line,delimiter,chunk_counter::Int=1)
 
 Appends data to vector, initial chunk can be of zero size
+
 """
-function fill_data_chunk!(data_chunk::Vector{Float64},current_line,delimiter,chunk_counter::Int=1)
+function fill_data_chunk!(data_chunk::Vector{Float64},current_line,
+                                delimiter,chunk_counter::Int=1)
         #@show jdx.y_data
         for s in eachsplit(current_line,delimiter)
             s = strip(s)
             !isempty(s) || continue # check for empty string
             if !is_PAC_string(s) 
-                push!(data_chunk, Base.parse(Float64,s))
+                set_or_push!(data_chunk,chunk_counter,Base.parse(Float64,s))
                 chunk_counter += 1
             else
-                parsed_numbers_vector = split_PAC_string(s)
+                #=parsed_numbers_vector = split_PAC_string(s)
                 out = length(parsed_numbers_vector)
-                append!(data_chunk,parsed_numbers_vector)
+                for i = reverse(eachindex(parsed_numbers_vector))
+                    set_or_push!(data_chunk,chunk_counter+i-1,parsed_numbers_vector[i])
+                end
+                #append!(data_chunk,parsed_numbers_vector)
+                chunk_counter += out=#
+                out = split_PAC_string!(data_chunk,chunk_counter,s)
                 chunk_counter += out
             end
         end
         return chunk_counter-1
     end
+    function set_or_push!(v::Vector{T}, i::Int, val::T) where T
+        if 1 <= i <= length(v)
+            v[i] = val
+        elseif i == length(v) + 1
+            push!(v, val)
+        else i > length(v) + 1
+            resize!(v, i)  # resize to accommodate the index
+            v[i] = val
+        end
+    end
+
+"""
+    split_PAC_string!(a::Vector,starting_index::Int,s::AbstractString,
+        pattern::Regex=r"[+-]")
+
+Version of splitting PCA string which fills resizable vector a
+"""
+function split_PAC_string!(a::Vector{T},starting_index::Int,s::AbstractString,
+        pattern::Regex=r"[+-]") where T<:Number
+    starting_index > length(a) && resize!(a,starting_index)
+    
+    s = strip(s)
+    counter = starting_index
+    stop_index = 0
+    stop_index = 0
+    start_index = 1
+    for (ii,m) in enumerate(eachmatch(pattern,s))
+        offset = getfield(m,:offset)
+        ii==1 && offset == 1 && continue
+        stop_index = offset-1
+        set_or_push!(a,counter, Base.parse(T,s[start_index:stop_index])) 
+        start_index = 1 + stop_index 
+        counter +=1
+    end   
+    set_or_push!(a,counter, Base.parse(Float64,s[start_index:end]))
+    return counter-starting_index+1
+end
     """
     split_PAC_string(s::String, pattern::Regex=r"[+-]")
 
 Function splits string with digits separated by multiple patterns and fills array `a`
 starting from `starting_index` in-place, returns the quantity of numbers parsed from the string
 """
-function split_PAC_string!(a::AbstractArray,starting_index::Int,s::AbstractString,
-            pattern::Regex=r"[+-]")
+function split_PAC_string!(a::MVector{N,T},starting_index::Int,s::AbstractString,
+            pattern::Regex=r"[+-]") where {N,T}
         s = strip(s)
-        offsets = [x.offset for x in eachmatch(pattern, s)] # generating array of patterns match
-        N = length(offsets)
-        if N==0 # there are no patterns
-            val =  Base.tryparse(Float64,s)
-            !isnothing(val) ? a[1]=val : return starting_index+1
-            return starting_index+1
-        end
-        if offsets[1]==1
-            starting_counter  = 2
-        else
-            starting_counter = 1
-        end
-        counter=starting_index
+        counter = starting_index
+        stop_index = 0
+        stop_index = 0
         start_index = 1
-        for ii in starting_counter:N
-            stop_index = offsets[ii]-1
-            a[counter] = Base.parse(Float64,s[start_index:stop_index]) 
+        for (ii,m) in enumerate(eachmatch(pattern,s))
+            offset = getfield(m,:offset)
+            ii==1 && offset == 1 && continue
+            stop_index = offset-1
+            a[counter] = Base.parse(T,s[start_index:stop_index])
             start_index = 1 + stop_index 
             counter +=1
-        end
-        a[counter] = Base.parse(Float64,s[start_index:end])
+        end   
+        a[counter] =  Base.parse(Float64,s[start_index:end])
         return counter-starting_index+1
     end
     """

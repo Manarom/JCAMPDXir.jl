@@ -1,8 +1,8 @@
 #debug script
-using Revise, Plots,OrderedCollections
+using Revise, Plots,OrderedCollections,StaticArrays
 test_data_folder = joinpath(".","test","tests data")
 python_package_test_data = joinpath(test_data_folder,"jcamp_python")
-includet("JCAMPDXir.jl")
+include("JCAMPDXir.jl")
 
 line = "575.17-3042244 1597332-970474 1254921-1092859 2206136"
 jdx = JCAMPDXir.JDXblock()
@@ -10,9 +10,13 @@ JCAMPDXir.addline!(JCAMPDXir.XYYline,jdx,line)
 jdx.y_data
 data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,"benzene.jdx")) # reading test file
 plot(data.x,data.y)
-a = [1.0; 1.0; 1.0; 1.0; 1.0]
-JCAMPDXir.split_PAC_string!(a,3,"+345-23.0-4")
+a = Float64[]
+JCAMPDXir.split_PAC_string!(a,1,"+345-23.0-4")
 a
+s = MVector{3}(a)
+JCAMPDXir.split_PAC_string!(a,3,"+345-23.0-4")
+s
+
 
 line = "11995.21,    32112;   11991.36,    32505;   11987.5,    32727;   11983.64,    33481;"
 jdx = JCAMPDXir.JDXblock()
@@ -25,6 +29,7 @@ readed_num = length(files_from_jcamp_py)
 
 problem_files_index = OrderedDict{Int,Pair{Int,String}}()
 error_counter = 0
+
 for (i,f) in enumerate(files_from_jcamp_py)
     file_headers = JCAMPDXir.parse_headers(joinpath(python_package_test_data,f))
     if haskey(file_headers,"JCAMP-DX") && isa(file_headers["JCAMP-DX"],Number) && file_headers["JCAMP-DX"]<=4.24
@@ -37,7 +42,7 @@ for (i,f) in enumerate(files_from_jcamp_py)
     catch ex
         bt = backtrace()
         msg = sprint(showerror, ex, bt)
-        error_counter +=1
+        global error_counter +=1
         push!(problem_files_index,error_counter=>Pair(i,msg))
     end
 end
@@ -45,8 +50,8 @@ problem_files_index[1]
 error_counter
 println("error $(100*error_counter/length(files_from_jcamp_py)) %")
 files_from_jcamp_py[43]
-data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,files_from_jcamp_py[43])) # reading test file
-plot(data[2].x,data[2].y)
+data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,files_from_jcamp_py[1])) # reading test file
+plot(data.x,data.y)
 data.y[end]
 
 data_headers = JCAMPDXir.parse_headers(joinpath(python_package_test_data,files_from_jcamp_py[6]))

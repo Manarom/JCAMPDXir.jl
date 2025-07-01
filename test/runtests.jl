@@ -54,9 +54,9 @@ end
        try 
             JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,f))
             @test true
-       catch ex
+       catch 
         @show f
-            @show ex
+            #@show ex
             @test false
        end
     end
