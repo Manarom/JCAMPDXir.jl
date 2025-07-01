@@ -456,7 +456,9 @@ write_jdx_file(file_name,jdx::JDXblock; kwargs...) = write_jdx_file(file_name,jd
 
 Writes [`JDXblock`](@ref) object to file
 """
-write_jdx_file(jdx::JDXblock; kwargs...) = write_jdx_file(jdx.file_name,jdx; kwargs...)                                                                  
+write_jdx_file(jdx::JDXblock; kwargs...) = write_jdx_file(jdx.file_name,jdx; kwargs...)       
+
+
     """
     read_jdx_file(file_name::String;delimiter=" ")
 
@@ -487,7 +489,7 @@ lines in file (+1 stays to count the last line of file, which contains `#end=`  
 lines in file , see also [`read!`](@ref) and [`JDXblock`](@ref)
 
 """
-    function read_jdx_file(file_name::String;delimiter = nothing)
+    function read_jdx_file(file_name::String;fixed_columns_number::Bool=true,delimiter = nothing)
         @assert isfile(file_name) "Must be a file"
         jdx_blocks = count_blocks(file_name)
         if length(jdx_blocks) ==1
@@ -633,7 +635,8 @@ Appends data to vector, initial chunk can be of zero size
 
 """
 function fill_data_chunk!(data_chunk::Vector{Float64},current_line,
-                                delimiter,chunk_counter::Int=1)
+                                            delimiter,
+                                            chunk_counter::Int=1)
         #@show jdx.y_data
         for s in eachsplit(current_line,delimiter)
             s = strip(s)
@@ -642,18 +645,13 @@ function fill_data_chunk!(data_chunk::Vector{Float64},current_line,
                 set_or_push!(data_chunk,chunk_counter,Base.parse(Float64,s))
                 chunk_counter += 1
             else
-                #=parsed_numbers_vector = split_PAC_string(s)
-                out = length(parsed_numbers_vector)
-                for i = reverse(eachindex(parsed_numbers_vector))
-                    set_or_push!(data_chunk,chunk_counter+i-1,parsed_numbers_vector[i])
-                end
-                #append!(data_chunk,parsed_numbers_vector)
-                chunk_counter += out=#
                 out = split_PAC_string!(data_chunk,chunk_counter,s)
                 chunk_counter += out
             end
         end
-        return chunk_counter-1
+        points_in_chunk = chunk_counter-1
+        length(data_chunk)!=points_in_chunk &&  resize!(data_chunk,points_in_chunk)
+        return points_in_chunk
     end
     function set_or_push!(v::Vector{T}, i::Int, val::T) where T
         if 1 <= i <= length(v)
@@ -717,36 +715,6 @@ function split_PAC_string!(a::MVector{N,T},starting_index::Int,s::AbstractString
         return counter-starting_index+1
     end
     """
-    split_PAC_string(s::String, pattern::Regex=r"[+-]")
-
-Function splits string with digits separated by multiple patterns
-"""
-function split_PAC_string(s::AbstractString, pattern::Regex=r"[+-]")
-        s = strip(s)
-        offsets = [x.offset for x in eachmatch(pattern, s)]
-        N = length(offsets)
-        parts = Float64[]
-        if N==0 
-            val =  Base.tryparse(Float64,s)
-            !isnothing(val) ? push!(parts, Base.parse(Float64,s)) : return parts
-            return parts
-        end
-        if offsets[1]==1
-            starting_counter  = 2
-        else
-            starting_counter = 1
-        end
-        start_index = 1
-        for ii in starting_counter:N
-            stop_index = offsets[ii]-1
-            push!(parts, Base.parse(Float64,s[start_index:stop_index])) 
-            start_index = 1 + stop_index 
-        end
-        push!(parts, Base.parse(Float64,s[start_index:end])) 
-        return parts
-    end
-
-    """
     generateXvector!(jdx::JDXblock)
 
 Generates equally spaced x-vector 
@@ -785,12 +753,15 @@ parse_headers(file::String) = file |> JDXblock |>  parse_headers!
     end
 
     """
-    read!(jdx::JDXblock)
+    read!(jdx::JDXblock; delimiter=nothing,
+                                    only_headers::Bool=false,
+                                    fixed_numbers_line::Bool=true)
 
 fills precreated JDXblock object see [`JDXblock`](@ref)
 """
 function read!(jdx::JDXblock; delimiter=nothing,
-                              only_headers::Bool=false)
+                                    only_headers::Bool=false,
+                                    fixed_columns_number::Bool=true)
         if !isfile(jdx.file_name)
             return nothing
         end
@@ -872,13 +843,17 @@ function read!(jdx::JDXblock; delimiter=nothing,
                 resize!(jdx.y_data,total_point_number)
                 is_XYYline ? generateXvector!(jdx) : resize!(jdx.x_data,total_point_number)
                 points_number_per_chunk = jdx.ypoints_per_line + jdx.xpoints_per_line
-                data_chunk_container = MVector{points_number_per_chunk,Float64}(undef)    
+                data_chunk_container = fixed_columns_number ? MVector{points_number_per_chunk,Float64}(undef) : Vector{Float64}(undef,points_number_per_chunk)    
                 if is_XYYline    
                     x_gen = jdx.x_data[1] # generated x to compare
                     jdx.is_violated_flag[1] = !isapprox(x_gen, x_point,rtol=X_VIOLATION_CRITERIA)    
                     for i in 2:data_lines_number
                         ln = jdx.decoding(readline(io_file))
                         x_point = addline!(line_type,jdx,data_chunk_container,ln,i,delimiter=delimiter)
+                        if fixed_columns_number 
+                            jdx.ypoints_per_line=nothing
+                            jdx.xpoints_per_line=nothing
+                        end
                         if !isnan(x_point)
                             x_gen = jdx.x_data[(i-1)*number_of_y_point_per_chunk + 1] # generated x
                             jdx.is_violated_flag[i] =  !isapprox(x_gen, x_point,rtol=X_VIOLATION_CRITERIA)
