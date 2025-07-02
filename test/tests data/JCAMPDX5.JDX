@@ -2,7 +2,7 @@
 ##JCAMP-DX=5.01
 ##DATATYPE=LINK
 ##BLOCKS=16
-##TITLE=7 ��
+##TITLE=7
 ##JCAMP-DX=5.01  $$ Nicolet v. 1
 ##DATATYPE=INFRARED SPECTRUM
 ##ORIGIN=UNKNOWN
@@ -18,14 +18,14 @@ ElementMultiply or ElementDivide
 Number of sample scans: 200
 Collection length: 112.43 sec
 Sample gain: 4.0
-Background collected on:  �� ��� 11 15:10:25 2025 (GMT+03:00);
+Background collected on:   11 15:10:25 2025 (GMT+03:00);
 Number of background scans: 200
 Background gain: 4.0
 Sample spacing:  1.000
 Number of scan points: 4384
 Resolution points: 2048
 Number of FFT points: 16384
-Apodization: N-B �������;
+Apodization: N-B ;
 Phase correction: Mertz;
 Laser frequency: 15798.3 cm-1
 Number of rejected sample scans: 0
