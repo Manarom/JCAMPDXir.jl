@@ -3,6 +3,11 @@ using Revise, Plots,OrderedCollections,StaticArrays
 test_data_folder = joinpath(".","test","tests data")
 python_package_test_data = joinpath(test_data_folder,"jcamp_python")
 includet("JCAMPDXir.jl")
+d = JCAMPDXir.DataBuffer(MVector{3,Float64}(undef))
+JCAMPDXir.fill_data_buffer!(d,"2.3 4.6 7.8",isspace)
+d.buffer
+
+
 
 line = "575.17-3042244 1597332-970474 1254921-1092859 2206136"
 jdx = JCAMPDXir.JDXblock()
