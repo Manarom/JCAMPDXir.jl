@@ -55,7 +55,7 @@ function check_data_point!(dv::DataViolation,value_checker::T,
         message = "$(field) is violated $(point_index>0 ? "at point"*string(point_index) : nothing), 
                     $(line_index>0 ? "at line"*string(line_index) : nothing), 
                     the value of approx(val_calculated,val_checker,rtol= $(criterium))"
-        push!(dv,ViolationPoint(value_checker,value_real,difference,point_index,line_index,message))
+        push!(dv,ViolationPoint(value_checker,value_real,difference,point_index,line_index,message),field)
     end
 
 end
