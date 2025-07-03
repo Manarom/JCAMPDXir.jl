@@ -11,7 +11,7 @@ d.buffer
 d2= JCAMPDXir.DataBuffer()
 line = "575.17-3042244 1597332-970474 1254921-1092859 2206136"
 jdx = JCAMPDXir.JDXblock()
-JCAMPDXir.addline!(jdx,d2,line,1)
+JCAMPDXir.addline!(jdx,d2,line)
 jdx.y_data
 data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,"benzene.jdx")) # reading test file
 plot(data.x,data.y)
@@ -72,7 +72,7 @@ length(T_data.y)
 head = JCAMPDXir.parse_headers(raw".\test\tests data\JCAMP_XYXY.jdx")
 head
 include("JCAMPDXir.jl")
-jdx_blocks = JCAMPDXir.count_blocks(raw".\test\tests data\jcamp_python\sulphur hexafluoride.jdx")
+jdx_blocks = JCAMPDXir.count_blocks(raw".\test\tests data\jcamp_python\example_compound_file.jdx")
 out = JCAMPDXir.read!.(jdx_blocks)
 using Plots
 plot(out[1].x,out[1].y)
