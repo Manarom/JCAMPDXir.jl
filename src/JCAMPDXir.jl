@@ -77,7 +77,7 @@ JCAMPDXir
     include("WriteJCAMP.jl")
     # strange symbols
     """
-    Squezzed from digits dictionary
+    Squezzed symbols to string digits
 
     """
     const SQZ_digits = Dict('@'=>"+0", 'A'=>"+1", 'B'=>"+2", 
@@ -88,6 +88,9 @@ JCAMPDXir
                             'f'=>"-6", 'g'=>"-7", 'h'=>"-8", 
                             'i'=>"-9")#','=>" " '+'=>"+",  '-'=>"-",  
                             #','=>" ") misleading with XY...XY delimiter and PAC form
+    """
+    Differential symbols to string digits
+    """
 	const DIF_digits = Dict('%'=>"+0", 'J'=>"+1",  'K'=>"+2",  
                             'L'=>"+3",  'M'=>"+4",  'N'=>"+5",  
                             'O'=>"+6",  'P'=>"+7",  'Q'=>"+8",
@@ -95,7 +98,9 @@ JCAMPDXir
                             'l'=>"-3", 'm'=>"-4", 'n'=>"-5",
                             'o'=>"-6", 'p'=>"-7", 'q'=>"-8",
                             'r'=>"-9")
-
+    """
+    Duplication symbols to string digits
+    """
     const DUP_digits = Dict('S'=>1, 'T'=>2, 'U'=>3, 'V'=>4, 
                             'W'=>5, 'X'=>6, 'Y'=>7, 'Z'=>8,
                              's'=>9)
@@ -130,7 +135,7 @@ right after the reading the line of data from file.
     end    
     #const ASDF = Union{}
 
-    decode(::Type{T},s) where T<:ASDF= begin
+    decode(::Type{T},s) where T<:Union{ASDF,SQZ_DIF_Decoding}= begin
         s = decode(SQZ_Decoding,s) # decoding 
         return decode(DIF_Decoding,s)
     end
@@ -156,27 +161,19 @@ is_DUP_string(s::AbstractString) = occursin(DUP_regexp,s)
 
 Returns decoding type by parsing the input string
 """
-function get_decoding_type(s::AbstractString)
-    is_SQZ = is_SQZ_string(s)
-    is_DIF = is_DIF_string(s)
-    is_DUP = is_DUP_string(s)
-    is_SQZ && is_DIF && is_DUP && return SQZ_DIF_DUP_Decoding
-    is_SQZ && is_DIF && return SQZ_DIF_Decoding
-    is_SQZ && is_DUP && return SQZ_DUP_Decoding
-    is_DIF && is_DUP && return DIF_DUP_Decoding
-    is_SQZ && return SQZ_Decoding
-    is_DIF && return DIF_Decoding
-    is_DUP && return DUP_Decoding
+    function get_decoding_type(s::AbstractString)
+        is_SQZ = is_SQZ_string(s)
+        is_DIF = is_DIF_string(s)
+        is_DUP = is_DUP_string(s)
+        is_SQZ && is_DIF && is_DUP && return SQZ_DIF_DUP_Decoding
+        is_SQZ && is_DIF && return SQZ_DIF_Decoding
+        is_SQZ && is_DUP && return SQZ_DUP_Decoding
+        is_DIF && is_DUP && return DIF_DUP_Decoding
+        is_SQZ && return SQZ_Decoding
+        is_DIF && return DIF_Decoding
+        is_DUP && return DUP_Decoding
 
-    return No_Decoding
-end
-
-    function Base.parse(::Type{T},s::AbstractString) where T<:Union{SQZ_DIF_DUP_Decoding,DUP_Decoding,DIF_DUP_Decoding}
-        is_DUP_string(s) || return [Base.parse(Float64,s)]
-        m = match(DUP_regexp,s)
-        !isnothing(m) || return Float64[]
-        n = DUP_digits[m.match[1]] # multiplyer numeric
-        return  Base.parse(Float64,s[1:m.offset-1])
+        return No_Decoding
     end
 
     abstract type DATAline end
@@ -258,11 +255,14 @@ JDXreader obj constructor, creates empty object with no data
         end
     end
     is_resizable(db::DataBuffer) = buffertype(db) <:Vector
+    has_DIF_type(::DataBuffer{D,B,L}) where {D,B,L}=  L <: DIF_Decoding || L <: DIF_DUP_Decoding || L <: SQZ_DIF_Decoding || L<:SQZ_DIF_DUP_Decoding
+
     datalinetype(::DataBuffer{DataLineType}) where DataLineType = DataLineType
     buffertype(::DataBuffer{DL,BufferType}) where {DL,BufferType} = BufferType
     linedecodingtype(::DataBuffer{DL,BT,LineDecodingType}) where {DL,BT,LineDecodingType} = LineDecodingType
     parsetotype(::DataBuffer{DL,BT,LD,ParseToType}) where {DL,BT,LD,ParseToType} = ParseToType
-    Base.length(db::DataBuffer) = length(db.buffer)
+    Base.length(db::DataBuffer{D,V}) where {D,V<:Vector} = Base.length(db.buffer)
+    Base.length(db::DataBuffer{D,MVector{N,T}}) where {D,N,T} = N
     """
     write_jdx_file(file_name,jdx::JDXblock; kwargs...)
 
@@ -333,7 +333,7 @@ Creates JDXreader object from full file name
         jdx.file_name = file_name
         return jdx
     end
-    function parseJDXheaders(jdx::JDXblock,headers::Vector{String})
+    function parse_headers!(jdx::JDXblock,headers::Vector{String})
         multilined_header_started = false
         last_key = ""
         for head in headers
@@ -380,7 +380,7 @@ This function parses `current_line` string of file and fills the parsed data to 
     function addline!( jdx::JDXblock, 
                         data_buffer::DataBuffer{DataLineType},
                         current_line::String; # index of current data chunk
-                        delimiter=isspace) where DataLineType<:XYYline
+                        delimiter=DEFAULT_DELIMITER(DataLineType)) where DataLineType<:XYYline
         
         if isempty(current_line) || current_line[1]=='#'  
              return NaN
@@ -439,36 +439,16 @@ function addline!(jdx::JDXblock,
         jdx.filled_points_counter += div(cur_points_number,2) 
         return data_buffer.buffer[1] # returns x-value for checks
     end   
-    """
-    fill_data_buffer!(data_buffer::MVector,current_line,delimiter,chunk_counter::Int=1)
 
-Fills vector from string line splitting it by the delimiter and parsing each value to Float64
-Returns the number for parsed numbers
-"""
-function fill_data_buffer!(data_buffer::DataBuffer{DataLineType,BufferType,LineDecodingType,ParseToType},
-                                                current_line,
-                                                delimiter,
-                                                chunk_counter::Int=1) where {DataLineType, 
-                                                                            BufferType<:MVector,
-                                                                            LineDecodingType,
-                                                                            ParseToType}
-                                                # DataBuffer{BufferType,ParseToType,DataLineType,LineDecodingType}
-        current_line = LineDecodingType(current_line)
-        for s in eachsplit(current_line,delimiter)
-            s = strip(s)
-            !isempty(s) || continue # check for empty string
-            if chunk_counter>length(data_buffer)
-                break
-            end
-            if !is_PAC_string(s) && ParseToType<:Float64
-                data_buffer.buffer[chunk_counter] = Base.parse(ParseToType,s)
-                chunk_counter += 1
-            else
-                out = split_PAC_string!(data_buffer.buffer,chunk_counter,s)
-                chunk_counter += out
-            end
+    function split_data_chunk!(data_buffer::DataBuffer{D,B,L,
+                            ParseToType},chunk_string,chunk_counter) where {D,B,L,
+                            ParseToType}
+        if !is_PAC_string(chunk_string) 
+            set_or_push!(data_buffer.buffer,chunk_counter,Base.parse(ParseToType,chunk_string))
+            return 1
+        else
+            return split_PAC_string!(data_buffer,chunk_counter,chunk_string)
         end
-        return chunk_counter-1 # total number of parsed numerics
     end
     """
     fill_data_buffer!(data_buffer::Vector{Float64},current_line,delimiter,chunk_counter::Int=1)
@@ -476,51 +456,80 @@ function fill_data_buffer!(data_buffer::DataBuffer{DataLineType,BufferType,LineD
 Appends data to vector, initial chunk can be of zero size
 
 """
-function fill_data_buffer!(data_buffer::DataBuffer{DataLineType,BufferType,LineDecodingType,ParseToType},
+function fill_data_buffer!(data_buffer::DataBuffer{D,B,
+                                            LineDecodingType,
+                                            ParseToType},
                                             current_line,
-                                            delimiter,
-                                            chunk_counter::Int=1) where {DataLineType, 
-                                            BufferType<:Vector,
+                                            delimiter, 
+                                            chunk_counter=1) where {D,B,
                                             LineDecodingType,
                                             ParseToType}
         #@show jdx.y_data
-        current_line = LineDecodingType(current_line)
-        for s in eachsplit(current_line,delimiter)
+        line_decoded = LineDecodingType(current_line)
+        for s in eachsplit(line_decoded,delimiter)
             s = strip(s)
             !isempty(s) || continue # check for empty string
-            if !is_PAC_string(s) 
-                if ParseToType<:Float64
-                    set_or_push!(data_buffer.buffer,chunk_counter,Base.parse(ParseToType,s))
-                    chunk_counter += 1
-                else
-                    error("Under construction")
-                end
-            else
-                out = split_PAC_string!(data_buffer.buffer,chunk_counter,s)
-                chunk_counter += out
-            end
+            chunk_counter += split_data_chunk!(data_buffer,s,chunk_counter)
         end
         points_in_chunk = chunk_counter-1
-        length(data_buffer)!=points_in_chunk &&  resize!(data_buffer.buffer,points_in_chunk)
+        is_resizable(data_buffer) || length(data_buffer) != points_in_chunk && resize!(data_buffer.buffer,points_in_chunk)
+        if has_DIF_type(data_buffer) && is_DIF_string(current_line) # if it is supposed that buffer has DIF type
+            for i in 2:points_in_chunk
+                data_buffer.buffer[i] += data_buffer.buffer[i-1]
+            end
+        end
         return points_in_chunk
     end
 
     function set_or_push!(v::Vector{T}, i::Int, val::T) where T<:Number
-        if 1 <= i <= length(v)
+        M = length(v)
+        if 1 <= i <= M
             v[i] = val
-        elseif i == length(v) + 1
+        elseif i == M + 1
             push!(v, val)
-        else i > length(v) + 1
-            resize!(v, i)  # resize to accommodate the index
+        else i > M + 1
+            resize!(v, i) 
             v[i] = val
         end
+        return 1
     end
-    function set_or_push!(dest::Vector{T},i::Int,val::AbstractVector{T}) where T<:Number
+    function set_or_push!(v::Vector{T},i::I,a::Tuple{T,I}) where {T<:Number,I<:Number}
+        (val,N) = a # val - value N number of value repeating (excluding the value itself)
+        # version if i==length(v)
+        # v[i] = val 
+        # append!(v,fill(val,N))
+        N==1 && return set_or_push!(v,i,val) + set_or_push!(v,i+1,val)
+        M = length(v)
+        i+N <= M || resize!(v,i+N)
+        vi = @view v[i:i+N]
+        fill!(vi,val)
+        return N+1
+    end
+    function set_or_push!(v::MVector, i::Int, val) 
+        v[i]=val
+        return 1
+    end
+    function set_or_push!(dest::AbstractVector{T},i::Int,val::AbstractVector{T}) where T<:Number
         end_index = i + length(val)-1
         for ii in end_index:-1:i
             v_ind =  ii -i + 1
             set_or_push!(dest,ii,val[v_ind])
         end
+        return end_index - i + 1
+    end
+
+
+
+    """
+    Base.parse(::Type{T},s::AbstractString) where T<:ASDF
+
+Parses string which is formatted into 
+"""
+function Base.parse(::Type{T},s::AbstractString) where T<:ASDF
+        m = match(DUP_regexp,s)
+        !isnothing(m) || return (Base.parse(Float64,s),1)
+        n = DUP_digits[m.match[1]] # multiplyer numeric
+        return  (Base.parse(Float64,s[1:m.offset-1]),n)
     end
 """
     split_PAC_string!(a::Vector,starting_index::Int,s::AbstractString,
@@ -528,10 +537,11 @@ function fill_data_buffer!(data_buffer::DataBuffer{DataLineType,BufferType,LineD
 
 Version of splitting PCA string which fills resizable vector a
 """
-function split_PAC_string!(a::Vector{T},starting_index::Int,s::AbstractString,
-        pattern::Regex=r"[+-]") where T<:Number
-    starting_index > length(a) && resize!(a,starting_index)
-    
+function split_PAC_string!(a::DataBuffer{D,B,L,
+                                        ParseToType},starting_index::Int,s::AbstractString,
+                                        pattern::Regex=r"[+-]") where {D,B,L,
+                                        ParseToType<:Number}
+    starting_index > length(a) && resize!(a.buffer,starting_index)
     s = strip(s)
     counter = starting_index
     stop_index = 0
@@ -541,37 +551,14 @@ function split_PAC_string!(a::Vector{T},starting_index::Int,s::AbstractString,
         offset = getfield(m,:offset)
         ii==1 && offset == 1 && continue
         stop_index = offset-1
-        set_or_push!(a,counter, Base.parse(T,s[start_index:stop_index])) 
+        set_or_push!(a.buffer,counter, Base.parse(ParseToType,s[start_index:stop_index])) 
         start_index = 1 + stop_index 
         counter +=1
     end   
-    set_or_push!(a,counter, Base.parse(T,s[start_index:end]))
+    set_or_push!(a.buffer,counter, Base.parse(ParseToType,s[start_index:end]))
     return counter-starting_index+1
 end
-    """
-    split_PAC_string(s::String, pattern::Regex=r"[+-]")
 
-Function splits string with digits separated by multiple patterns and fills array `a`
-starting from `starting_index` in-place, returns the quantity of numbers parsed from the string
-"""
-function split_PAC_string!(a::MVector{N,T},starting_index::Int,s::AbstractString,
-            pattern::Regex=r"[+-]") where {N,T}
-        s = strip(s)
-        counter = starting_index
-        stop_index = 0
-        stop_index = 0
-        start_index = 1
-        for (ii,m) in enumerate(eachmatch(pattern,s))
-            offset = getfield(m,:offset)
-            ii==1 && offset == 1 && continue
-            stop_index = offset-1
-            a[counter] = Base.parse(T,s[start_index:stop_index])
-            start_index = 1 + stop_index 
-            counter +=1
-        end   
-        a[counter] =  Base.parse(T,s[start_index:end])
-        return counter-starting_index+1
-    end
     """
     generateXvector!(jdx::JDXblock)
 
@@ -680,7 +667,7 @@ function read!(jdx::JDXblock; delimiter=nothing,
                 end
             end # endof header lines parsing 
            # #@show header_lines
-            parseJDXheaders(jdx,header_lines) #parses headers to dict from a vector of strings
+            parse_headers!(jdx,header_lines) #parses headers to dict from a vector of strings
             if only_headers # if we need only block headers without data 
                 return (x=Vector{Float64}([]),
                         y=Vector{Float64}([]), 

@@ -28,10 +28,12 @@ jdx = JCAMPDXir.JDXblock()
 JCAMPDXir.addline!(JCAMPDXir.XYXYline,jdx,line)
 jdx.x_data
 jdx.y_data
+
+
+
 files_from_jcamp_py = filter(r->occursin(".jdx",r), readdir(python_package_test_data))
 println("\ntesting files from $(python_package_test_data)" )
 readed_num = length(files_from_jcamp_py)
-
 problem_files_index = OrderedDict{Int,Pair{Int,String}}()
 error_counter = 0
 
@@ -55,7 +57,7 @@ problem_files_index[1]
 error_counter
 println("error $(100*error_counter/length(files_from_jcamp_py)) %")
 files_from_jcamp_py[35]
-data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,files_from_jcamp_py[35])) # reading test file
+data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,files_from_jcamp_py[2])) # reading test file
 plot(data.x,data.y)
 data.y[end]
 
@@ -65,7 +67,7 @@ data = JCAMPDXir.read_jdx_file(raw".\test\tests data\jcamp_python\example_multil
 plot(data.x,data.y)
 data.headers
 
-T_data = JCAMPDXir.read_jdx_file(raw".\test\tests data\JCAMP_XYXY.jdx") 
+T_data = JCAMPDXir.read_jdx_file(raw".\test\tests data\JCAMPDX5.jdx") 
 plot(T_data.x,T_data.y)
 T_data.headers["NPOINTS"]
 length(T_data.y)

@@ -28,7 +28,7 @@ no_headers_file = joinpath(test_data_folder,"test_file_no_headers.txt") # data w
 written_file_name = joinpath(test_data_folder,"written.jdx")
 two_column_ascii_file_name = joinpath(test_data_folder,"transmittance.txt")
 XYXY_test_file = joinpath(test_data_folder,"JCAMP_XYXY.jdx")
-
+JCAMPDX5_test_file = joinpath(test_data_folder,"JCAMPDX5.jdx")
 
 data_norm(x,y) = sqrt(sum(x->x^2, x .-y))/length(x)
 data_norm_rel(x,y) =begin
@@ -85,6 +85,12 @@ end
        @test data.y[i] ≈ 1e-6*y[2]
        @test data.x[i] ≈ y[1]   
     end 
+    println("____________________")    
+    println("\nReading JCAMP-DX-5.01")
+    data = JCAMPDXir.read_jdx_file(JCAMPDX5_test_file)
+    for (i,y) in enumerate(vec([114292232 112522752 111130888 110025904 109160424 108469448 107820264 107003944 105776976 103944576 101429344 98357408 94981288]))
+        @test data.y[i] ≈ 1.000000E-009*y 
+    end
     println("____________________")
     println("\nTesting by writing and reading the same data")
     data = JCAMPDXir.read_jdx_file(test_file) # reading test file
