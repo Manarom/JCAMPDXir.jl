@@ -1,8 +1,39 @@
 #debug script
-using Revise, Plots,OrderedCollections,StaticArrays
+using Revise, Plots,OrderedCollections,StaticArrays,DelimitedFiles
 test_data_folder = joinpath(".","test","tests data")
 python_package_test_data = joinpath(test_data_folder,"jcamp_python")
+ASDF_file_decoded = joinpath(test_data_folder,"isopropanol_ASDF_decoded.txt")
+asd_file = joinpath(python_package_test_data,"isopropanol_ASDF.jdx")
+asdf_data = readdlm(ASDF_file_decoded)
 includet("JCAMPDXir.jl")
+plot(asdf_data[:,1],asdf_data[:,2])
+asdf_line = "2561A058O445j574k394k500J085J232K650J052o294P237k468p57m255K018L444j210"
+asdf_data[1]
+asdf_headers = JCAMPDXir.parse_headers(asd_file)
+y_asdf = vec(asdf_data[:,2])/asdf_headers["YFACTOR"]
+x_asdf = vec(asdf_data[:,1])/asdf_headers["XFACTOR"]
+x_asdf[1]
+dif_keys = keys(JCAMPDXir.DIF_digits)
+ln = replace(asdf_line,[k=>" "*string(k) for k in keys(JCAMPDXir.DIF_digits)]...)
+y_asdf[1] 
+y_asdf[2]
+y_asdf[3]
+ln = asdf_line |> JCAMPDXir.SQZ |> JCAMPDXir.DIF
+ln = replace(ln,JCAMPDXir.DIF_digits...)
+db = [parse(Float64,s) for s in eachsplit(ln)]
+dbv = @view db[2:end] 
+dbv3 = @view db[3:end]
+for i in eachindex(db)[3:end]
+    db[i] = db[i-1] + db[i]
+end
+db
+using LinearAlgebra
+norm(db[2:end] .- y_asdf[1:17])
+y_asdf[3]
+ln = JCAMPDXir.SQZ(ln)
+replace(ln,)
+
+
 d = JCAMPDXir.DataBuffer(MVector{3,Float64}(undef))
 JCAMPDXir.fill_data_buffer!(d,"2.3 4.6 7.8",isspace)
 d.buffer
@@ -15,7 +46,7 @@ JCAMPDXir.addline!(jdx,d2,line)
 jdx.y_data
 data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,"benzene.jdx")) # reading test file
 plot(data.x,data.y)
-a = Float64[]
+a = JCAMPDXir.DataBuffer()
 JCAMPDXir.split_PAC_string!(a,1,"+345-23.0-4")
 a
 s = MVector{3}(a)
@@ -56,8 +87,8 @@ end
 problem_files_index[1]
 error_counter
 println("error $(100*error_counter/length(files_from_jcamp_py)) %")
-files_from_jcamp_py[35]
-data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,files_from_jcamp_py[2])) # reading test file
+files_from_jcamp_py[43]
+data = JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,files_from_jcamp_py[43])) # reading test file
 plot(data.x,data.y)
 data.y[end]
 

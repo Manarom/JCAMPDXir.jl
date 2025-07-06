@@ -4,14 +4,14 @@
 module JCAMPDXir
 using Dates,Interpolations,OrderedCollections,Printf,StaticArrays
 export JDXblock,
-            read!,
-            read_jdx_file,
-            write_jdx_file,
-            parse_headers,
-            xconvert!,
-            yconvert!,
-            addline!,
-            XYYline
+        read!,
+        read_jdx_file,
+        write_jdx_file,
+        parse_headers,
+        xconvert!,
+        yconvert!,
+        addline!,
+        XYYline
 """
 This JCAMP-DX (infrared) file format was developed for the exchange of infrared spectra between different laboratories.
 For general description of format refer to  [`UIPAC.ORG (pdf file)`](https://iupac.org/wp-content/uploads/2021/08/JCAMP-DX_IR_1988.pdf)
@@ -47,8 +47,6 @@ JCAMP file content example:
             .
             .
             ##END=
-
-
 """
 JCAMPDXir
     const IntOrNothing = Union{Int,Nothing}
@@ -80,24 +78,25 @@ JCAMPDXir
     Squezzed symbols to string digits
 
     """
-    const SQZ_digits = Dict('@'=>"+0", 'A'=>"+1", 'B'=>"+2", 
-                            'C'=>"+3", 'D'=>"+4",'E'=>"+5",
-                            'F'=>"+6", 'G'=>"+7", 'H'=>"+8", 
-                            'I'=>"+9",'a'=>"-1", 'b'=>"-2", 
-                            'c'=>"-3", 'd'=>"-4", 'e'=>"-5", 
-                            'f'=>"-6", 'g'=>"-7", 'h'=>"-8", 
-                            'i'=>"-9")#','=>" " '+'=>"+",  '-'=>"-",  
+    const SQZ_digits = Dict('@'=>" 0", 'A'=>" 1", 'B'=>" 2", 
+                            'C'=>" 3", 'D'=>" 4",'E'=>" 5",
+                            'F'=>" 6", 'G'=>" 7", 'H'=>" 8", 
+                            'I'=>" 9",'a'=>" -1", 'b'=>" -2", 
+                            'c'=>" -3", 'd'=>" -4", 'e'=>" -5", 
+                            'f'=>" -6", 'g'=>" -7", 'h'=>" -8", 
+                            'i'=>" -9")#','=>" " '+'=>"+",  '-'=>"-",  
                             #','=>" ") misleading with XY...XY delimiter and PAC form
     """
     Differential symbols to string digits
     """
-	const DIF_digits = Dict('%'=>"+0", 'J'=>"+1",  'K'=>"+2",  
-                            'L'=>"+3",  'M'=>"+4",  'N'=>"+5",  
-                            'O'=>"+6",  'P'=>"+7",  'Q'=>"+8",
-                            'R'=>"+9",  'j'=>"-1", 'k'=>"-2", 
+	const DIF_digits = Dict('%'=>"0", 'J'=>"1",  'K'=>"2",  
+                            'L'=>"3",  'M'=>"4",  'N'=>"5",  
+                            'O'=>"6",  'P'=>"7",  'Q'=>"8",
+                            'R'=>"9",  'j'=>"-1", 'k'=>"-2", 
                             'l'=>"-3", 'm'=>"-4", 'n'=>"-5",
                             'o'=>"-6", 'p'=>"-7", 'q'=>"-8",
                             'r'=>"-9")
+    const DIF_shift = Dict(k=>" "*string(k) for k in keys(DIF_digits))
     """
     Duplication symbols to string digits
     """
@@ -110,96 +109,86 @@ JCAMPDXir
     const DUP_regexp = Regex("["*join(keys(DUP_digits))*"]" )
 
     """
-Types used to decode the data line before parsing to digits 
-By default there is no decoding `No_Decoding`, but if the first line of data 
-in block contains `SQZ_digits` than it marks entire block as `SQZ_Decoding`
-by setting the decoding field of `JDXblock` object. String decoding is performed 
-right after the reading the line of data from file.
+    This type are used to decode the whole string
 
     """
     abstract type Decoding end
-    struct SQZ_Decoding<:Decoding end
-    struct No_Decoding<:Decoding end
-    struct DIF_Decoding<:Decoding end
-    struct DUP_Decoding<:Decoding end
-    struct DIF_DUP_Decoding<:Decoding end
-    struct SQZ_DIF_Decoding<:Decoding end
-    struct SQZ_DUP_Decoding<:Decoding end
-    struct SQZ_DIF_DUP_Decoding<:Decoding end
-    const ASDF = Union{SQZ_DUP_Decoding,SQZ_DIF_DUP_Decoding,DUP_Decoding}
-# this functions should return the string with all values replaced by the actual numers
-    decode(::Type{No_Decoding},s::AbstractString) = s
-    decode(::Type{SQZ_Decoding},s) = replace(s,SQZ_digits...)
-    decode(::Type{DIF_Decoding},s) = begin 
-        s = replace(s,DIF_digits...)
-    end    
-    #const ASDF = Union{}
+   
+# line decoding
+    abstract type LineDecoding<:Decoding end
+    struct No_Line_Decoding<:LineDecoding end
+    struct SQZ<:LineDecoding end
+    struct PAC<:LineDecoding end
+    struct SQZ_PAC<:LineDecoding end
+    struct Unspecified_Line<:LineDecoding end
 
-    decode(::Type{T},s) where T<:Union{ASDF,SQZ_DIF_Decoding}= begin
-        s = decode(SQZ_Decoding,s) # decoding 
-        return decode(DIF_Decoding,s)
-    end
-    (::Type{T})(s::AbstractString) where T<:Decoding = decode(T,s)
-
-    """
-    is_PAC_string(s::AbstractString)
-
-Checks if string is of PAC format (+ or - signs are used to separate digits)
-"""
-is_PAC_string(s::AbstractString) =occursin('-',s)||occursin('+',s)
-"""
-    is_SQZ_string(s::AbstractString)
-
-Checks if the string is coded using SQZ fomat
-"""
-is_SQZ_string(s::AbstractString) = occursin(SQZ_regexp,s)
-is_DIF_string(s::AbstractString) = occursin(DIF_regexp,s)
-is_DUP_string(s::AbstractString) = occursin(DUP_regexp,s)
-
-"""
-    get_decoding_type(s::AbstractString)
-
-Returns decoding type by parsing the input string
-"""
-    function get_decoding_type(s::AbstractString)
+    is_PAC_string(s::AbstractString) =occursin('-',s)||occursin('+',s)
+    is_SQZ_string(s::AbstractString) = occursin(SQZ_regexp,s)
+    is_SQZ_PAC_string(s::AbstractString) = is_PAC_string(s) && is_SQZ_string(s)
+    function get_line_decoding(s::AbstractString)
+        is_PAC = is_PAC_string(s)
         is_SQZ = is_SQZ_string(s)
+        is_PAC && is_SQZ && return SQZ_PAC
+        is_PAC && return PAC
+        is_SQZ && return SQZ
+        return No_Line_Decoding
+    end
+    (::Type{No_Line_Decoding})(s::AbstractString) = s
+    (::Type{SQZ})(s::AbstractString) = replace(s,SQZ_digits...)
+    (::Type{PAC})(s::AbstractString) = replace(s,"+"=>" +","-"=>" -")
+    (::Type{SQZ_PAC})(s::AbstractString) = s |> PAC |> SQZ
+    (::Type{Unspecified_Line})(s::AbstractString) = get_line_decoding(s)(s)
+
+# chunk decoding 
+    abstract type ChunkDecoding <: Decoding end
+    struct No_Chunk_Decoding<: ChunkDecoding end
+    struct DIF <: ChunkDecoding end
+    struct DUP <: ChunkDecoding end
+    struct DIF_DUP <: ChunkDecoding end
+    struct Unspecified_Chunk <:ChunkDecoding end
+
+    is_DIF_string(s::AbstractString) = occursin(DIF_regexp,s)
+    is_DUP_string(s::AbstractString) = occursin(DUP_regexp,s)
+    function get_chunk_decoding(s::AbstractString)
         is_DIF = is_DIF_string(s)
         is_DUP = is_DUP_string(s)
-        is_SQZ && is_DIF && is_DUP && return SQZ_DIF_DUP_Decoding
-        is_SQZ && is_DIF && return SQZ_DIF_Decoding
-        is_SQZ && is_DUP && return SQZ_DUP_Decoding
-        is_DIF && is_DUP && return DIF_DUP_Decoding
-        is_SQZ && return SQZ_Decoding
-        is_DIF && return DIF_Decoding
-        is_DUP && return DUP_Decoding
-
-        return No_Decoding
+        is_DIF && is_DUP && return DIF_DUP
+        is_DIF && return DIF
+        is_DUP && return DUP
+        return No_Chunk_Decoding
     end
+    (::Type{DIF})(s::AbstractString) = replace(s,DIF_shift...)
+    parse_chunk(::Type{No_Chunk_Decoding},s::AbstractString) = Base.parse(Float64,s)
+    parse_chunk(::Type{Unspecified_Chunk},s::AbstractString) = parse_chunk(get_chunk_decoding(s),s)
+    """
+    Base.parse(::Type{T},s::AbstractString) where T<:ASDF
+
+Parses string with doubled entries
+"""
+    function parse_chunk(::Type{DUP},s::AbstractString)
+        m = match(DUP_regexp,s)
+        !isnothing(m) || return (Base.parse(Float64,s),1)
+        n = DUP_digits[m.match[1]] # multiplyer numeric
+        return  (Base.parse(Float64,s[1:m.offset-1]),n)
+    end
+    function parse_chunk(::Type{DIF},s::AbstractString)
+        m = match(DIF_regexp,s)
+        !isnothing(m) || return Base.parse(Float64,s)
+        val = Base.parse(Float64,s[1:m.offset-1])
+        itr = Iterators.map( m->DIF_digits[String(m.match)[1]] ,eachmatch(DIF_regexp,s))
+        return (val,itr)
+    end
+    function parse_chunk(::Type{DIF_DUP},s::AbstractString)
+        @show s
+        is_DUP_string(s) && return parse_chunk(DUP,s)
+        return parse_chunk(DIF,s)
+    end
+
+
 
     abstract type DATAline end
     struct XYYline<:DATAline end
     struct XYXYline<:DATAline end
-
-    macro tuple_unpack(N::Int, x)
-        @assert N >= 1
-        expr = Expr(:tuple)
-        push!(expr.args, quote
-          begin
-            (val, state) = iterate($(esc(x)))
-            val
-          end
-        end)
-        for i = 2:N
-          push!(expr.args, quote
-            begin
-              (val, state) = iterate($(esc(x)), state)
-              val
-            end
-          end)
-        end
-        expr
-    end
-    
    
     """
     Stored parsed data
@@ -214,8 +203,6 @@ Must be filled using [`read!`](@ref) function
         violation::DataViolation# 
         starting_line::IntOrNothing # block starting line index
         ending_line::IntOrNothing # block ending line index
-        #xpoints_per_line::IntOrNothing # number of X points in a single line
-        #ypoints_per_line::IntOrNothing# number of Y points in a single line
         filled_points_counter::Int # stores the number of filled points 
         #decoding# decoding function 
         """
@@ -235,34 +222,35 @@ JDXreader obj constructor, creates empty object with no data
         end
     end
     # 
-    mutable struct DataBuffer{  DataLineType<:DATAline, # line format XYYline or XYXYline
-                                BufferType<:AbstractVector,# data buffer type may be static vector or dynamic vector
-                                LineDecodingType<:Decoding, # this type performs some work on line before parsing 
-                                ParseToType<:Union{Float64,ASDF} # this is a type of single chunk to be prased to using Base.parse
-                                }
+    mutable struct DataBuffer{  DataLineType <: DATAline, # line format XYYline or XYXYline
+                                BufferType   <: AbstractVector,# data buffer type may be static vector or dynamic vector
+                                LineType     <: LineDecoding, # this type performs some work on line before parsing 
+                                ChunkType    <: ChunkDecoding # this is a type of single chunk to be prased to using Base.parse
+                            }
         buffer::BufferType
         xpoints_per_line::IntOrNothing # number of X points in a single line
         ypoints_per_line::IntOrNothing# number of Y points in a single line
-        DataBuffer() = new{XYYline,Vector{Float64},No_Decoding,Float64}(Float64[],nothing,nothing)
+        DataBuffer() = new{XYYline,Vector{Float64},No_Line_Decoding,No_Chunk_Decoding}(Float64[],nothing,nothing)
         function DataBuffer(buffer::BufferType;
                             DataLineType = XYYline,
-                            LineDecodingType = No_Decoding,
-                            ParseToType = Float64,
+                            LineDecodingType = No_Line_Decoding,
+                            ChunkType = No_Chunk_Decoding,
                             xpoints_per_line::IntOrNothing=nothing,
                             ypoints_per_line::IntOrNothing=nothing) where BufferType<:AbstractVector 
 
-            return new{DataLineType,BufferType,LineDecodingType,ParseToType}(buffer,xpoints_per_line,ypoints_per_line)
+            return new{DataLineType,BufferType,LineDecodingType,ChunkType}(buffer,xpoints_per_line,ypoints_per_line)
         end
     end
     is_resizable(db::DataBuffer) = buffertype(db) <:Vector
-    has_DIF_type(::DataBuffer{D,B,L}) where {D,B,L}=  L <: DIF_Decoding || L <: DIF_DUP_Decoding || L <: SQZ_DIF_Decoding || L<:SQZ_DIF_DUP_Decoding
+    has_DIF_type(::DataBuffer{D,B,L,C}) where {D,B,L,C} =  L <: DIF || L <: DIF_DUP 
 
-    datalinetype(::DataBuffer{DataLineType}) where DataLineType = DataLineType
-    buffertype(::DataBuffer{DL,BufferType}) where {DL,BufferType} = BufferType
-    linedecodingtype(::DataBuffer{DL,BT,LineDecodingType}) where {DL,BT,LineDecodingType} = LineDecodingType
-    parsetotype(::DataBuffer{DL,BT,LD,ParseToType}) where {DL,BT,LD,ParseToType} = ParseToType
-    Base.length(db::DataBuffer{D,V}) where {D,V<:Vector} = Base.length(db.buffer)
-    Base.length(db::DataBuffer{D,MVector{N,T}}) where {D,N,T} = N
+    datalinetype(::DataBuffer{D}) where D = D
+    buffertype(::DataBuffer{D,B}) where {D,B} = B
+    linedecodingtype(::DataBuffer{D,B,L}) where {D,B,L} = L
+    chunktype(::DataBuffer{D,B,L,C}) where {D,B,L,C} = C
+    Base.length(db::DataBuffer{D,B}) where {D,B<:Vector} = length(db.buffer)
+    Base.length(::DataBuffer{D,MVector{N,T}}) where {D,N,T} = N
+
     """
     write_jdx_file(file_name,jdx::JDXblock; kwargs...)
 
@@ -371,8 +359,9 @@ DEFAULT_DELIMITER(::Type{XYXYline}) = r"[,;]"
                         current_line::String; # index of current data chunk
                         delimiter=isspace) where DataLineType<:XYYline
 
-This function parses `current_line` string of file and fills the parsed data to the y-vector of `jdx`  object
-`number_of_y_point_per_chunk` - the number of data point (excluding the x-coordinate) in the line 
+This function parses `current_line` string of file and fills the 
+parsed data to the y-vector of `jdx`  object `number_of_y_point_per_chunk` 
+- the number of data point (excluding the x-coordinate) in the line 
 `chunk_index`  - the index of chunk 
 `delimiter`   - data points delimiter used in `split` function
 
@@ -391,8 +380,6 @@ This function parses `current_line` string of file and fills the parsed data to 
             number_of_y_point_per_chunk = cur_points_number - 1 
             data_buffer.ypoints_per_line = number_of_y_point_per_chunk
             data_buffer.xpoints_per_line = 1
-            #jdx.ypoints_per_line = number_of_y_point_per_chunk
-            #jdx.xpoints_per_line = 1
             resize!(jdx.y_data,number_of_y_point_per_chunk)
         end 
         starting_index = 1 + jdx.filled_points_counter
@@ -440,44 +427,33 @@ function addline!(jdx::JDXblock,
         return data_buffer.buffer[1] # returns x-value for checks
     end   
 
-    function split_data_chunk!(data_buffer::DataBuffer{D,B,L,
-                            ParseToType},chunk_string,chunk_counter) where {D,B,L,
-                            ParseToType}
-        if !is_PAC_string(chunk_string) 
-            set_or_push!(data_buffer.buffer,chunk_counter,Base.parse(ParseToType,chunk_string))
-            return 1
-        else
-            return split_PAC_string!(data_buffer,chunk_counter,chunk_string)
-        end
-    end
+    #=function split_data_chunk!(data_buffer::DataBuffer{D,B,L,
+                            ChunkType},chunk_string,chunk_counter) where {D,B,L,
+                            ChunkType}
+
+        set_or_push!(data_buffer.buffer,chunk_counter,parse_chunk(ChunkType,chunk_string))
+    end=#
     """
     fill_data_buffer!(data_buffer::Vector{Float64},current_line,delimiter,chunk_counter::Int=1)
 
 Appends data to vector, initial chunk can be of zero size
 
 """
-function fill_data_buffer!(data_buffer::DataBuffer{D,B,
-                                            LineDecodingType,
-                                            ParseToType},
+    function fill_data_buffer!(data_buffer::DataBuffer{D,B,LineDecodingType,ChunkType},
                                             current_line,
                                             delimiter, 
                                             chunk_counter=1) where {D,B,
                                             LineDecodingType,
-                                            ParseToType}
-        #@show jdx.y_data
+                                            ChunkType}
         line_decoded = LineDecodingType(current_line)
-        for s in eachsplit(line_decoded,delimiter)
-            s = strip(s)
-            !isempty(s) || continue # check for empty string
-            chunk_counter += split_data_chunk!(data_buffer,s,chunk_counter)
+        for chunk in eachsplit(line_decoded,delimiter)
+            chunk = strip(chunk)
+            !isempty(chunk) || continue # check for empty string
+            #chunk_counter += split_data_chunk!(data_buffer,s,chunk_counter)
+            chunk_counter +=set_or_push!(data_buffer.buffer,chunk_counter,parse_chunk(ChunkType,chunk))
         end
         points_in_chunk = chunk_counter-1
         is_resizable(data_buffer) || length(data_buffer) != points_in_chunk && resize!(data_buffer.buffer,points_in_chunk)
-        if has_DIF_type(data_buffer) && is_DIF_string(current_line) # if it is supposed that buffer has DIF type
-            for i in 2:points_in_chunk
-                data_buffer.buffer[i] += data_buffer.buffer[i-1]
-            end
-        end
         return points_in_chunk
     end
 
@@ -493,11 +469,24 @@ function fill_data_buffer!(data_buffer::DataBuffer{D,B,
         end
         return 1
     end
-    function set_or_push!(v::Vector{T},i::I,a::Tuple{T,I}) where {T<:Number,I<:Number}
+    function set_or_push!(v::AbstractVector{T},i::Int,a::Tuple) where T<:Number
+        (val,itr) = a
+        #N = length(itr) # eachmatch iterator doesnt has length 
+        #M = length(v)
+        #i+N <= M || resize!(v,i+N)
+        counter = set_or_push!(v,i, val)
+        for (j,x) in enumerate(itr)
+            counter += set_or_push!(v,i+j, v[i+j-1] + x)
+        end
+        return counter
+    end
+    """
+    set_or_push!(v::AbstractVector{T},i::I,a::Tuple{T,I}) where {T<:Number,I<:Number}
+
+Works for DUP format
+"""
+function set_or_push!(v::AbstractVector{T},i::Int,a::Tuple{Number,Int}) where {T<:Number}
         (val,N) = a # val - value N number of value repeating (excluding the value itself)
-        # version if i==length(v)
-        # v[i] = val 
-        # append!(v,fill(val,N))
         N==1 && return set_or_push!(v,i,val) + set_or_push!(v,i+1,val)
         M = length(v)
         i+N <= M || resize!(v,i+N)
@@ -505,32 +494,20 @@ function fill_data_buffer!(data_buffer::DataBuffer{D,B,
         fill!(vi,val)
         return N+1
     end
-    function set_or_push!(v::MVector, i::Int, val) 
+    function set_or_push!(v::MVector{N,T}, i::Int, val::T) where {N,T<:Number}
         v[i]=val
         return 1
     end
-    function set_or_push!(dest::AbstractVector{T},i::Int,val::AbstractVector{T}) where T<:Number
+    #=function set_or_push!(dest::AbstractVector{T},i::Int,val::AbstractVector{T}) where T<:Number
         end_index = i + length(val)-1
         for ii in end_index:-1:i
             v_ind =  ii -i + 1
             set_or_push!(dest,ii,val[v_ind])
         end
         return end_index - i + 1
-    end
+    end=#
 
-
-
-    """
-    Base.parse(::Type{T},s::AbstractString) where T<:ASDF
-
-Parses string which is formatted into 
-"""
-function Base.parse(::Type{T},s::AbstractString) where T<:ASDF
-        m = match(DUP_regexp,s)
-        !isnothing(m) || return (Base.parse(Float64,s),1)
-        n = DUP_digits[m.match[1]] # multiplyer numeric
-        return  (Base.parse(Float64,s[1:m.offset-1]),n)
-    end
+#=
 """
     split_PAC_string!(a::Vector,starting_index::Int,s::AbstractString,
         pattern::Regex=r"[+-]")
@@ -558,6 +535,7 @@ function split_PAC_string!(a::DataBuffer{D,B,L,
     set_or_push!(a.buffer,counter, Base.parse(ParseToType,s[start_index:end]))
     return counter-starting_index+1
 end
+=#
 
     """
     generateXvector!(jdx::JDXblock)
@@ -613,7 +591,8 @@ fills precreated JDXblock object see [`JDXblock`](@ref)
 function read!(jdx::JDXblock; delimiter=nothing,
                                only_headers::Bool=false,
                                fixed_columns_number::Bool=true,
-                               fixed_data_decoding::Bool = true)
+                               fixed_line_decoding::Bool = false,
+                               fixed_chunk_decoding::Bool = false)
         if !isfile(jdx.file_name)
             return nothing
         end
@@ -641,10 +620,10 @@ function read!(jdx::JDXblock; delimiter=nothing,
                             delimiter =  isnothing(delimiter) ? DEFAULT_DELIMITER(line_type) : delimiter
                             #jdx.decoding =  # filling decoding type
                             # @show jdx.decoding 
-
                             first_line_buffer = DataBuffer(Vector{Float64}(undef,6),
                                                         DataLineType =line_type,
-                                                        LineDecodingType = get_decoding_type(ln) )
+                                                        LineDecodingType = get_line_decoding(ln),
+                                                        ChunkType = get_chunk_decoding(ln) )
                             x_point = addline!( jdx, first_line_buffer,ln, delimiter = delimiter) # this function modifies
                             # jdx file block by setting values to the number of points-per-line properties 
                         end
@@ -686,19 +665,24 @@ function read!(jdx::JDXblock; delimiter=nothing,
                 generateVectors!(jdx,line_type)
                 #is_XYYline ? generateXvector!(jdx) : resize!(jdx.x_data,total_point_number)
                 points_number_per_chunk = length(first_line_buffer)
-                #@show points_number_per_chunk
-                if !fixed_columns_number
+                # if fix_decoding the line decoding type is taken from the first line, otherwise 
+                # line type check is performed each line scan
+                line_decoding_type = !fixed_line_decoding ? Unspecified_Line : linedecodingtype(first_line_buffer)
+                chunk_decoding_type = !fixed_chunk_decoding ? Unspecified_Chunk : chunktype(first_line_buffer)
+                buffer = !fixed_columns_number ? copy(first_line_buffer.buffer) : MVector{points_number_per_chunk,Float64}(undef)
+                if !fixed_columns_number && fixed_chunk_decoding && fixed_line_decoding
                     data_buffer = first_line_buffer
                 else
-                    data_buffer = DataBuffer(MVector{points_number_per_chunk,Float64}(undef),
+                    data_buffer = DataBuffer(buffer,
                                              DataLineType=line_type,
-                                             LineDecodingType = linedecodingtype(first_line_buffer),
-                                             ParseToType = parsetotype(first_line_buffer),
+                                             LineDecodingType = line_decoding_type,
+                                             ChunkType = chunk_decoding_type,
                                              xpoints_per_line = first_line_buffer.xpoints_per_line,
                                              ypoints_per_line = first_line_buffer.ypoints_per_line)
                 end    
                 # @show data_buffer_container
                 x_factor = get(jdx.data_headers,"XFACTOR",1.0)
+
                 if is_XYYline    
                     x_gen = jdx.x_data[1] # generated x to compare
                     #jdx.is_violated_flag[1] = !isapprox(x_gen, x_factor*x_point,rtol=X_VIOLATION_CRITERIUM)    
@@ -777,4 +761,24 @@ function read!(jdx::JDXblock; delimiter=nothing,
         return jdx_blocks
     end#funend
 
+
+    macro tuple_unpack(N::Int, x)
+        @assert N >= 1
+        expr = Expr(:tuple)
+        push!(expr.args, quote
+          begin
+            (val, state) = iterate($(esc(x)))
+            val
+          end
+        end)
+        for i = 2:N
+          push!(expr.args, quote
+            begin
+              (val, state) = iterate($(esc(x)), state)
+              val
+            end
+          end)
+        end
+        expr
+    end
 end
