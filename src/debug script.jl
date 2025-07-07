@@ -1,15 +1,16 @@
 #debug script
+#data = joinpath(".","test","tests data","jcamp_python","isopropanol_ASDF.jdx")
 using Revise, Plots,OrderedCollections,StaticArrays,DelimitedFiles
 test_data_folder = joinpath(".","test","tests data")
 python_package_test_data = joinpath(test_data_folder,"jcamp_python")
 ASDF_file_decoded = joinpath(test_data_folder,"isopropanol_ASDF_decoded.txt")
-asd_file = joinpath(python_package_test_data,"isopropanol_ASDF.jdx")
+asdf_file = joinpath(python_package_test_data,"isopropanol_ASDF.jdx")
 asdf_data = readdlm(ASDF_file_decoded)
 includet("JCAMPDXir.jl")
 plot(asdf_data[:,1],asdf_data[:,2])
 asdf_line = "2561A058O445j574k394k500J085J232K650J052o294P237k468p57m255K018L444j210"
 asdf_data[1]
-asdf_headers = JCAMPDXir.parse_headers(asd_file)
+asdf_headers = JCAMPDXir.parse_headers(asdf_file)
 y_asdf = vec(asdf_data[:,2])/asdf_headers["YFACTOR"]
 x_asdf = vec(asdf_data[:,1])/asdf_headers["XFACTOR"]
 x_asdf[1]
@@ -19,6 +20,13 @@ y_asdf[1]
 y_asdf[2]
 y_asdf[3]
 ln = asdf_line |> JCAMPDXir.SQZ |> JCAMPDXir.DIF
+
+data = JCAMPDXir.read_jdx_file(asdf_file)
+plot(data.x,data.y)
+plot!(asdf_data[:,1],asdf_data[:,2])
+mat = hcat(asdf_data,data.x,data.y)
+
+
 ln = replace(ln,JCAMPDXir.DIF_digits...)
 db = [parse(Float64,s) for s in eachsplit(ln)]
 dbv = @view db[2:end] 
@@ -106,7 +114,7 @@ head = JCAMPDXir.parse_headers(raw".\test\tests data\JCAMP_XYXY.jdx")
 head
 include("JCAMPDXir.jl")
 jdx_blocks = JCAMPDXir.count_blocks(raw".\test\tests data\jcamp_python\example_compound_file.jdx")
-out = JCAMPDXir.read!.(jdx_blocks)
+out = JCAMPDXir.read_jdx_file(raw".\test\tests data\jcamp_python\example_compound_file.jdx")
 using Plots
 plot(out[1].x,out[1].y)
 plot!(out[2].x,out[2].y)

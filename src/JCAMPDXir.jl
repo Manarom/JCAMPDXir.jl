@@ -88,6 +88,7 @@ JCAMPDXir
                             #','=>" ") misleading with XY...XY delimiter and PAC form
     """
     Differential symbols to string digits
+
     """
 	const DIF_digits = Dict('%'=>"0", 'J'=>"1",  'K'=>"2",  
                             'L'=>"3",  'M'=>"4",  'N'=>"5",  
@@ -96,6 +97,7 @@ JCAMPDXir
                             'l'=>"-3", 'm'=>"-4", 'n'=>"-5",
                             'o'=>"-6", 'p'=>"-7", 'q'=>"-8",
                             'r'=>"-9")
+
     const DIF_shift = Dict(k=>" "*string(k) for k in keys(DIF_digits))
     """
     Duplication symbols to string digits
@@ -103,19 +105,29 @@ JCAMPDXir
     const DUP_digits = Dict('S'=>1, 'T'=>2, 'U'=>3, 'V'=>4, 
                             'W'=>5, 'X'=>6, 'Y'=>7, 'Z'=>8,
                              's'=>9)
-    
+    const DUP_shift = Dict(k=>string(k)*" " for k in keys(DUP_digits))
+
     const SQZ_regexp = Regex("["*join(keys(SQZ_digits))*"]" )
     const DIF_regexp = Regex("["*join(keys(DIF_digits))*"]" )
     const DUP_regexp = Regex("["*join(keys(DUP_digits))*"]" )
 
     """
-    This type are used to decode the whole string
-
-    """
+    Types for decoding of both lines and chunks string
+"""
     abstract type Decoding end
-   
-# line decoding
+    """
+    (::Type{T})(s::AbstractString) where T<:Decoding
+
+By default all chunk and line decoding do nothing to the string line 
+"""
+    (::Type{T})(s::AbstractString) where T<:Decoding= s   
+    """
+    Types for decoding lines and shunk string
+"""
     abstract type LineDecoding<:Decoding end
+    """
+    When there is no line decoding all 
+"""
     struct No_Line_Decoding<:LineDecoding end
     struct SQZ<:LineDecoding end
     struct PAC<:LineDecoding end
@@ -125,7 +137,12 @@ JCAMPDXir
     is_PAC_string(s::AbstractString) =occursin('-',s)||occursin('+',s)
     is_SQZ_string(s::AbstractString) = occursin(SQZ_regexp,s)
     is_SQZ_PAC_string(s::AbstractString) = is_PAC_string(s) && is_SQZ_string(s)
-    function get_line_decoding(s::AbstractString)
+    """
+    get_line_decoding(s::AbstractString)
+
+Gets string type by matching specific line decoding patterns
+"""
+function get_line_decoding(s::AbstractString)
         is_PAC = is_PAC_string(s)
         is_SQZ = is_SQZ_string(s)
         is_PAC && is_SQZ && return SQZ_PAC
@@ -133,7 +150,7 @@ JCAMPDXir
         is_SQZ && return SQZ
         return No_Line_Decoding
     end
-    (::Type{No_Line_Decoding})(s::AbstractString) = s
+
     (::Type{SQZ})(s::AbstractString) = replace(s,SQZ_digits...)
     (::Type{PAC})(s::AbstractString) = replace(s,"+"=>" +","-"=>" -")
     (::Type{SQZ_PAC})(s::AbstractString) = s |> PAC |> SQZ
@@ -158,6 +175,9 @@ JCAMPDXir
         return No_Chunk_Decoding
     end
     (::Type{DIF})(s::AbstractString) = replace(s,DIF_shift...)
+    (::Type{DUP})(s::AbstractString) = replace(s,DUP_shift...)
+    (::Type{DIF_DUP})(s::AbstractString) = s |> DIF |> DUP
+    (::Type{Unspecified_Chunk})(s::AbstractString) = get_chunk_decoding(s)(s)
     parse_chunk(::Type{No_Chunk_Decoding},s::AbstractString) = Base.parse(Float64,s)
     parse_chunk(::Type{Unspecified_Chunk},s::AbstractString) = parse_chunk(get_chunk_decoding(s),s)
     """
@@ -167,24 +187,61 @@ Parses string with doubled entries
 """
     function parse_chunk(::Type{DUP},s::AbstractString)
         m = match(DUP_regexp,s)
-        !isnothing(m) || return (Base.parse(Float64,s),1)
+        !isnothing(m) || return Base.parse(Float64,s)
         n = DUP_digits[m.match[1]] # multiplyer numeric
-        return  (Base.parse(Float64,s[1:m.offset-1]),n)
+        return  (Base.parse(Float64,s[1:m.offset-1]), n, DUP)
     end
     function parse_chunk(::Type{DIF},s::AbstractString)
-        m = match(DIF_regexp,s)
-        !isnothing(m) || return Base.parse(Float64,s)
-        val = Base.parse(Float64,s[1:m.offset-1])
-        itr = Iterators.map( m->DIF_digits[String(m.match)[1]] ,eachmatch(DIF_regexp,s))
-        return (val,itr)
+        is_DIF_string(s) || return Base.parse(Float64,s)
+        val = Base.parse(Float64,replace(s,DIF_digits...))
+        return (val,DIF)
     end
     function parse_chunk(::Type{DIF_DUP},s::AbstractString)
-        @show s
-        is_DUP_string(s) && return parse_chunk(DUP,s)
+        #@show s
+        is_DUP = is_DUP_string(s)
+        is_DIF = is_DIF_string(s)
+        if is_DIF && is_DUP
+            m = match(DUP_regexp,s)
+            (val,) = parse_chunk(DIF,s[1:m.offset-1])
+            n = DUP_digits[m.match[1]] # multiplyer numeric
+            return (val,n,DUP)
+        end
+        is_DUP && return parse_chunk(DUP,s)
         return parse_chunk(DIF,s)
     end
+    function set_or_push!(v::Vector{T}, i::Int, val::T) where T<:Number
+        M = length(v)
+        if 1 <= i <= M
+            v[i] = val
+        elseif i == M + 1
+            push!(v, val)
+        else i > M + 1
+            resize!(v, i) 
+            v[i] = val
+        end
+        return 1
+    end
+    function set_or_push!(v,i,val,::Type{DIF})
+        set_or_push!(v,i,v[i-1] + val)
+    end
+    """
+    set_or_push!(v::AbstractVector{T},i::Int,val,repeates_number,::Type{DUP}) where {T<:Number}
 
-
+Works for DUP format
+"""
+    function set_or_push!(v::AbstractVector{T},i::Int,val,repeates_number,::Type{DUP}) where {T<:Number}
+        N = repeates_number
+        N==1 && return set_or_push!(v,i,val) + set_or_push!(v,i+1,val)
+        M = length(v)
+        i+N <= M || resize!(v,i+N)
+        vi = @view v[i:i+N]
+        fill!(vi,val)
+        return N+1
+    end
+    function set_or_push!(v::MVector{N,T}, i::Int, val::T) where {N,T<:Number}
+        v[i]=val
+        return 1
+    end
 
     abstract type DATAline end
     struct XYYline<:DATAline end
@@ -384,6 +441,9 @@ parsed data to the y-vector of `jdx`  object `number_of_y_point_per_chunk`
         end 
         starting_index = 1 + jdx.filled_points_counter
         ending_index =  starting_index + cur_points_number - 2
+        if ending_index > length(jdx.y_data) || starting_index > length(jdx.y_data)
+            return NaN
+        end
         v = @view jdx.y_data[ starting_index : ending_index ]
         y_data_buffer =@view data_buffer.buffer[2:cur_points_number]
         copyto!(v,y_data_buffer)
@@ -426,13 +486,6 @@ function addline!(jdx::JDXblock,
         jdx.filled_points_counter += div(cur_points_number,2) 
         return data_buffer.buffer[1] # returns x-value for checks
     end   
-
-    #=function split_data_chunk!(data_buffer::DataBuffer{D,B,L,
-                            ChunkType},chunk_string,chunk_counter) where {D,B,L,
-                            ChunkType}
-
-        set_or_push!(data_buffer.buffer,chunk_counter,parse_chunk(ChunkType,chunk_string))
-    end=#
     """
     fill_data_buffer!(data_buffer::Vector{Float64},current_line,delimiter,chunk_counter::Int=1)
 
@@ -445,97 +498,18 @@ Appends data to vector, initial chunk can be of zero size
                                             chunk_counter=1) where {D,B,
                                             LineDecodingType,
                                             ChunkType}
-        line_decoded = LineDecodingType(current_line)
+        line_decoded = ChunkType(LineDecodingType(current_line))
         for chunk in eachsplit(line_decoded,delimiter)
             chunk = strip(chunk)
             !isempty(chunk) || continue # check for empty string
             #chunk_counter += split_data_chunk!(data_buffer,s,chunk_counter)
-            chunk_counter +=set_or_push!(data_buffer.buffer,chunk_counter,parse_chunk(ChunkType,chunk))
+            chunk_counter +=set_or_push!(data_buffer.buffer,chunk_counter,parse_chunk(ChunkType,chunk)...)
+  
         end
         points_in_chunk = chunk_counter-1
         is_resizable(data_buffer) || length(data_buffer) != points_in_chunk && resize!(data_buffer.buffer,points_in_chunk)
         return points_in_chunk
     end
-
-    function set_or_push!(v::Vector{T}, i::Int, val::T) where T<:Number
-        M = length(v)
-        if 1 <= i <= M
-            v[i] = val
-        elseif i == M + 1
-            push!(v, val)
-        else i > M + 1
-            resize!(v, i) 
-            v[i] = val
-        end
-        return 1
-    end
-    function set_or_push!(v::AbstractVector{T},i::Int,a::Tuple) where T<:Number
-        (val,itr) = a
-        #N = length(itr) # eachmatch iterator doesnt has length 
-        #M = length(v)
-        #i+N <= M || resize!(v,i+N)
-        counter = set_or_push!(v,i, val)
-        for (j,x) in enumerate(itr)
-            counter += set_or_push!(v,i+j, v[i+j-1] + x)
-        end
-        return counter
-    end
-    """
-    set_or_push!(v::AbstractVector{T},i::I,a::Tuple{T,I}) where {T<:Number,I<:Number}
-
-Works for DUP format
-"""
-function set_or_push!(v::AbstractVector{T},i::Int,a::Tuple{Number,Int}) where {T<:Number}
-        (val,N) = a # val - value N number of value repeating (excluding the value itself)
-        N==1 && return set_or_push!(v,i,val) + set_or_push!(v,i+1,val)
-        M = length(v)
-        i+N <= M || resize!(v,i+N)
-        vi = @view v[i:i+N]
-        fill!(vi,val)
-        return N+1
-    end
-    function set_or_push!(v::MVector{N,T}, i::Int, val::T) where {N,T<:Number}
-        v[i]=val
-        return 1
-    end
-    #=function set_or_push!(dest::AbstractVector{T},i::Int,val::AbstractVector{T}) where T<:Number
-        end_index = i + length(val)-1
-        for ii in end_index:-1:i
-            v_ind =  ii -i + 1
-            set_or_push!(dest,ii,val[v_ind])
-        end
-        return end_index - i + 1
-    end=#
-
-#=
-"""
-    split_PAC_string!(a::Vector,starting_index::Int,s::AbstractString,
-        pattern::Regex=r"[+-]")
-
-Version of splitting PCA string which fills resizable vector a
-"""
-function split_PAC_string!(a::DataBuffer{D,B,L,
-                                        ParseToType},starting_index::Int,s::AbstractString,
-                                        pattern::Regex=r"[+-]") where {D,B,L,
-                                        ParseToType<:Number}
-    starting_index > length(a) && resize!(a.buffer,starting_index)
-    s = strip(s)
-    counter = starting_index
-    stop_index = 0
-    stop_index = 0
-    start_index = 1
-    for (ii,m) in enumerate(eachmatch(pattern,s))
-        offset = getfield(m,:offset)
-        ii==1 && offset == 1 && continue
-        stop_index = offset-1
-        set_or_push!(a.buffer,counter, Base.parse(ParseToType,s[start_index:stop_index])) 
-        start_index = 1 + stop_index 
-        counter +=1
-    end   
-    set_or_push!(a.buffer,counter, Base.parse(ParseToType,s[start_index:end]))
-    return counter-starting_index+1
-end
-=#
 
     """
     generateXvector!(jdx::JDXblock)
@@ -583,10 +557,20 @@ parse_headers(file::String) = file |> JDXblock |>  parse_headers!
 
     """
     read!(jdx::JDXblock; delimiter=nothing,
-                                    only_headers::Bool=false,
-                                    fixed_numbers_line::Bool=true)
+                               only_headers::Bool=false,
+                               fixed_columns_number::Bool=true,
+                               fixed_line_decoding::Bool = false,
+                               fixed_chunk_decoding::Bool = false)
 
-fills precreated JDXblock object see [`JDXblock`](@ref)
+
+fills precreated JDXblock object see [`JDXblock`](@ref).
+
+    `delimiter` - data chunk delimiters
+    `only_headers`  - if true parses only block headers
+    `fixed_columns_number`  if true, all lines are supposed to have the same number of chunks
+    `fixed_line_decoding` if true, data line decoding (No_Line_Decoding, SQZ,PAC) is supposed  to be the same for all lines (parser obtains decoding from the first line of data)
+    `fixed_chunk_decoding` if true, all data chunks decoding (No_Chunk_Decoding,DIF,DUP) is supposed  to be the same for all lines (parser obtains decoding from the first line of data)
+
 """
 function read!(jdx::JDXblock; delimiter=nothing,
                                only_headers::Bool=false,
@@ -736,7 +720,14 @@ function read!(jdx::JDXblock; delimiter=nothing,
                 headers=jdx.data_headers)
     end#enof read!
 
-    function count_blocks(file_name)
+    """
+    count_blocks(file_name)
+
+Counts blocks in file `file_name`, fills coordinates of blocks start
+and finish in file lines, returns the vector of [`JDXblock`](@ref) blocks
+or a singe block.
+"""
+function count_blocks(file_name)
         @assert isfile(file_name) "Not a file"
         jdx_blocks = Vector{JDXblock}()
         open(file_name) do io
