@@ -231,12 +231,12 @@ Works for DUP format
 """
     function set_or_push!(v::AbstractVector{T},i::Int,val,repeates_number,::Type{DUP}) where {T<:Number}
         N = repeates_number
-        N==1 && return set_or_push!(v,i,val) + set_or_push!(v,i+1,val)
+        N==1 && return set_or_push!(v,i,val) #+ set_or_push!(v,i+1,val)
         M = length(v)
-        i+N <= M || resize!(v,i+N)
-        vi = @view v[i:i+N]
+        i+N-1 <= M || resize!(v,i+N-1)
+        vi = @view v[i:i+N-1]
         fill!(vi,val)
-        return N+1
+        return N
     end
     function set_or_push!(v::MVector{N,T}, i::Int, val::T) where {N,T<:Number}
         v[i]=val
