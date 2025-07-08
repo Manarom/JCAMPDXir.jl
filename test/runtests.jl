@@ -10,17 +10,18 @@ try
     owner = "nzhagen"
     repo = "jcamp"
     path = "data/infrared_spectra"
+    print("Refreshing testing data from ($(joinpath(owner,repo)))...")
     R = GitHub.repo(joinpath(owner,repo))
     files, _ = GitHub.directory(R, path)
-
+    
     for f in files
         fname = f.name
         !occursin(".jdx",fname) || fname ∈ files_from_jcamp_py ? continue : nothing
-        
         Downloads.download(string(f.download_url),joinpath(python_package_test_data,fname))
     end
-catch ex
-    println("Unable to read data from repo")
+    println("ok")
+catch 
+    println("unable to read data from repo")
 end
 
 test_file = joinpath(test_data_folder,"JCAMP_test_file.jdx") # this file containes testing spectra in JCAMP-DX specification
@@ -29,6 +30,10 @@ written_file_name = joinpath(test_data_folder,"written.jdx")
 two_column_ascii_file_name = joinpath(test_data_folder,"transmittance.txt")
 XYXY_test_file = joinpath(test_data_folder,"JCAMP_XYXY.jdx")
 JCAMPDX5_test_file = joinpath(test_data_folder,"JCAMPDX5.jdx")
+
+JCAMPDX_ASDF_file = joinpath(python_package_test_data,"isopropanol_ASDF.jdx")
+ASDF_file_decoded = joinpath(test_data_folder,"isopropanol_ASDF_decoded.txt") # this file was decoded using jcamp package 
+
 
 data_norm(x,y) = sqrt(sum(x->x^2, x .-y))/length(x)
 data_norm_rel(x,y) =begin
@@ -91,6 +96,20 @@ end
     for (i,y) in enumerate(vec([114292232 112522752 111130888 110025904 109160424 108469448 107820264 107003944 105776976 103944576 101429344 98357408 94981288]))
         @test data.y[i] ≈ 1.000000E-009*y 
     end
+
+
+    println("____________________")    
+    println("\nReading ASDF file format")
+    data = JCAMPDXir.read_jdx_file(JCAMPDX_ASDF_file)
+    asdf_data = readdlm(ASDF_file_decoded) # reading data decoded using python jcamp parser
+    @test begin
+        discr = 0
+        for (y1,y2) in zip(asdf_data[:,2],data.y)
+            discr +=abs(y1-y2)
+        end
+        discr/length(data.y)
+    end ≈ 0
+
     println("____________________")
     println("\nTesting by writing and reading the same data")
     data = JCAMPDXir.read_jdx_file(test_file) # reading test file

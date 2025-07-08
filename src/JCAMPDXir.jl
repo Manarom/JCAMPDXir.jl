@@ -17,9 +17,6 @@ This JCAMP-DX (infrared) file format was developed for the exchange of infrared 
 For general description of format refer to  [`UIPAC.ORG (pdf file)`](https://iupac.org/wp-content/uploads/2021/08/JCAMP-DX_IR_1988.pdf)
 In addition to the spectra themselves, the file also stores metadata containing information about the units of measurement
 and the conditions under which the spectra were acquired. A detailed specification of the format is provided via the link. 
-This package was written for a specific task and cannot be considered as a complete implementation of all JCAMP-DX format specification; 
-however, it implements some of the basic functionality to read [`read_jdx_file`](@ref) and write [`write_jdx_file`](@ref) JCAMP-DX files
-according to the `JCAMP-DX=4.24`.
 
 JCAMP file content example: 
 
@@ -73,9 +70,8 @@ JCAMPDXir
     )
     include("DataViolation.jl")
     include("WriteJCAMP.jl")
-    # strange symbols
     """
-    Squezzed symbols to string digits
+    Squezzed symbols to string digits converter
 
     """
     const SQZ_digits = Dict('@'=>" 0", 'A'=>" 1", 'B'=>" 2", 
@@ -87,7 +83,7 @@ JCAMPDXir
                             'i'=>" -9")#','=>" " '+'=>"+",  '-'=>"-",  
                             #','=>" ") misleading with XY...XY delimiter and PAC form
     """
-    Differential symbols to string digits
+    Differential symbols to string digits converter
 
     """
 	const DIF_digits = Dict('%'=>"0", 'J'=>"1",  'K'=>"2",  
@@ -101,10 +97,11 @@ JCAMPDXir
     const DIF_shift = Dict(k=>" "*string(k) for k in keys(DIF_digits))
     """
     Duplication symbols to string digits
+
     """
     const DUP_digits = Dict('S'=>1, 'T'=>2, 'U'=>3, 'V'=>4, 
                             'W'=>5, 'X'=>6, 'Y'=>7, 'Z'=>8,
-                             's'=>9)
+                            's'=>9)
     const DUP_shift = Dict(k=>string(k)*" " for k in keys(DUP_digits))
 
     const SQZ_regexp = Regex("["*join(keys(SQZ_digits))*"]" )
@@ -112,13 +109,15 @@ JCAMPDXir
     const DUP_regexp = Regex("["*join(keys(DUP_digits))*"]" )
 
     """
-    Types for decoding of both lines and chunks string
+    Types for decoding of both lines and chunks, line and chunk typisation is used 
+    to dispath during parsing
 """
     abstract type Decoding end
     """
     (::Type{T})(s::AbstractString) where T<:Decoding
 
-By default all chunk and line decoding do nothing to the string line 
+By default, all chunks and line decoding do nothing to the string line 
+
 """
     (::Type{T})(s::AbstractString) where T<:Decoding= s   
     """
@@ -132,15 +131,19 @@ By default all chunk and line decoding do nothing to the string line
     struct SQZ<:LineDecoding end
     struct PAC<:LineDecoding end
     struct SQZ_PAC<:LineDecoding end
-    struct Unspecified_Line<:LineDecoding end
+    """
+    When using Unspecified_Line type line type parser looks for the actual type for each line
 
+    """
+    struct Unspecified_Line<:LineDecoding end
+# string type checkers
     is_PAC_string(s::AbstractString) =occursin('-',s)||occursin('+',s)
     is_SQZ_string(s::AbstractString) = occursin(SQZ_regexp,s)
     is_SQZ_PAC_string(s::AbstractString) = is_PAC_string(s) && is_SQZ_string(s)
     """
     get_line_decoding(s::AbstractString)
 
-Gets string type by matching specific line decoding patterns
+Returns line type by searching for specific symbols
 """
 function get_line_decoding(s::AbstractString)
         is_PAC = is_PAC_string(s)
@@ -151,12 +154,17 @@ function get_line_decoding(s::AbstractString)
         return No_Line_Decoding
     end
 
-    (::Type{SQZ})(s::AbstractString) = replace(s,SQZ_digits...)
+    """
+    (::Type{SQZ})(s::AbstractString)
+
+All types are callable, when calling on a string 
+"""
+(::Type{SQZ})(s::AbstractString) = replace(s,SQZ_digits...)
     (::Type{PAC})(s::AbstractString) = replace(s,"+"=>" +","-"=>" -")
     (::Type{SQZ_PAC})(s::AbstractString) = s |> PAC |> SQZ
     (::Type{Unspecified_Line})(s::AbstractString) = get_line_decoding(s)(s)
 
-# chunk decoding 
+# chunk decoding types
     abstract type ChunkDecoding <: Decoding end
     struct No_Chunk_Decoding<: ChunkDecoding end
     struct DIF <: ChunkDecoding end
@@ -181,10 +189,11 @@ function get_line_decoding(s::AbstractString)
     parse_chunk(::Type{No_Chunk_Decoding},s::AbstractString) = Base.parse(Float64,s)
     parse_chunk(::Type{Unspecified_Chunk},s::AbstractString) = parse_chunk(get_chunk_decoding(s),s)
     """
-    Base.parse(::Type{T},s::AbstractString) where T<:ASDF
+    parse_chunk(::Type{<:ChunkDecoding},s::AbstractString)
 
-Parses string with doubled entries
+Functions to parse data chunk, 
 """
+function parse_chunk end
     function parse_chunk(::Type{DUP},s::AbstractString)
         m = match(DUP_regexp,s)
         !isnothing(m) || return Base.parse(Float64,s)
@@ -204,7 +213,7 @@ Parses string with doubled entries
             m = match(DUP_regexp,s)
             (val,) = parse_chunk(DIF,s[1:m.offset-1])
             n = DUP_digits[m.match[1]] # multiplyer numeric
-            return (val,n,DUP)
+            return (val,n,DIF_DUP)
         end
         is_DUP && return parse_chunk(DUP,s)
         return parse_chunk(DIF,s)
@@ -224,14 +233,19 @@ Parses string with doubled entries
     function set_or_push!(v,i,val,::Type{DIF})
         set_or_push!(v,i,v[i-1] + val)
     end
-    """
-    set_or_push!(v::AbstractVector{T},i::Int,val,repeates_number,::Type{DUP}) where {T<:Number}
-
-Works for DUP format
-"""
-    function set_or_push!(v::AbstractVector{T},i::Int,val,repeates_number,::Type{DUP}) where {T<:Number}
+    function set_or_push!(v::AbstractVector{T},i::Int,val,repeates_number,::Type{DIF_DUP}) where {T<:Number}
         N = repeates_number
         N==1 && return set_or_push!(v,i,val) #+ set_or_push!(v,i+1,val)
+        M = length(v)
+        i+N-1 <= M || resize!(v,i+N-1)
+        for jj=0:N-1
+            set_or_push!(v,jj+i,val,DIF)
+        end
+        return N
+    end
+    function set_or_push!(v::AbstractVector{T},i::Int,val,repeates_number,::Type{DUP}) where {T<:Number}
+        N = repeates_number
+        N==1 && return set_or_push!(v,i,val,DIF) #+ set_or_push!(v,i+1,val)
         M = length(v)
         i+N-1 <= M || resize!(v,i+N-1)
         vi = @view v[i:i+N-1]
@@ -242,7 +256,9 @@ Works for DUP format
         v[i]=val
         return 1
     end
-
+"""
+    DATAline type specifies the data organization patter viz XY...XY or XY...Y
+"""
     abstract type DATAline end
     struct XYYline<:DATAline end
     struct XYXYline<:DATAline end
@@ -261,7 +277,6 @@ Must be filled using [`read!`](@ref) function
         starting_line::IntOrNothing # block starting line index
         ending_line::IntOrNothing # block ending line index
         filled_points_counter::Int # stores the number of filled points 
-        #decoding# decoding function 
         """
         JDXblock()
 JDXreader obj constructor, creates empty object with no data
@@ -277,8 +292,24 @@ JDXreader obj constructor, creates empty object with no data
                 0)#,
                 #No_Decoding)
         end
+        
     end
-    # 
+    """
+    JDXblock(file_name::String)
+
+Creates an empty JDXblock object from full file name 
+"""
+    function JDXblock(file_name::String) # external constructor
+        if !isfile(file_name)
+            error("Input filename must be the fullfile name to the existing file")
+        end
+        jdx = JDXblock()
+        jdx.file_name = file_name
+        return jdx
+    end
+"""
+    DataBuffer is an itermediate container for data parsed from each string
+"""
     mutable struct DataBuffer{  DataLineType <: DATAline, # line format XYYline or XYXYline
                                 BufferType   <: AbstractVector,# data buffer type may be static vector or dynamic vector
                                 LineType     <: LineDecoding, # this type performs some work on line before parsing 
@@ -288,7 +319,18 @@ JDXreader obj constructor, creates empty object with no data
         xpoints_per_line::IntOrNothing # number of X points in a single line
         ypoints_per_line::IntOrNothing# number of Y points in a single line
         DataBuffer() = new{XYYline,Vector{Float64},No_Line_Decoding,No_Chunk_Decoding}(Float64[],nothing,nothing)
-        function DataBuffer(buffer::BufferType;
+    
+        """
+        DataBuffer(buffer::BufferType;
+                            DataLineType = XYYline,
+                            LineDecodingType = No_Line_Decoding,
+                            ChunkType = No_Chunk_Decoding,
+                            xpoints_per_line::IntOrNothing=nothing,
+                            ypoints_per_line::IntOrNothing=nothing) where BufferType<:AbstractVector
+
+    `buffer` - Vector or MVector (if it is known that the number of data hunks is the same for each line)
+"""
+function DataBuffer(buffer::BufferType;
                             DataLineType = XYYline,
                             LineDecodingType = No_Line_Decoding,
                             ChunkType = No_Chunk_Decoding,
@@ -300,7 +342,6 @@ JDXreader obj constructor, creates empty object with no data
     end
     is_resizable(db::DataBuffer) = buffertype(db) <:Vector
     has_DIF_type(::DataBuffer{D,B,L,C}) where {D,B,L,C} =  L <: DIF || L <: DIF_DUP 
-
     datalinetype(::DataBuffer{D}) where D = D
     buffertype(::DataBuffer{D,B}) where {D,B} = B
     linedecodingtype(::DataBuffer{D,B,L}) where {D,B,L} = L
@@ -326,15 +367,21 @@ Writes [`JDXblock`](@ref) object to file
 write_jdx_file(jdx::JDXblock; kwargs...) = write_jdx_file(jdx.file_name,jdx; kwargs...)       
 
 
-    """
-    read_jdx_file(file_name::String;delimiter=" ")
+"""
+    read_jdx_file(file_name::String;
+                fixed_columns_number::Bool=false,
+                delimiter = nothing,
+                validate_data::Bool=true)
 
-    Reads JCAMP-DX file
+Reads JCAMP-DX file `file_name`
 
 Input arguments: 
 
-file_name - full file name
-(optional) - delimiter 
+`file_name` - full file name
+(optional keyword args) 
+delimiter  - data chunks delimiter (default value is space)
+`fixed_columns_number` - if it is known 
+that each line in file has the same number of data chunks, this flag 
 
 returns namedtuple (or a vector of namedtuples in the case of multiple blocks) 
 
@@ -346,39 +393,39 @@ y - data
 
 headers - dictionary in "String => value" format with headers values 
 
-is_violated - is the Vector of Bool, if `is_violated[ind]` is `true` than control x-value
-which stay at the `ind`'th  `line of data` in the file differs from the corresponding 
-value of generated x-coordinate array by more than $(X_VIOLATION_CRITERIUM). The `line of data`
-index are the indces from 1 to `data_lines_number` where 
-`data_lines_number=total_lines_number - (header_lines_number +1)`
-`header_lines_number` is the number of headers keys, `total_lines_number` - is the total number of
-lines in file (+1 stays to count the last line of file, which contains `#end=`  ) 
-lines in file , see also [`read!`](@ref) and [`JDXblock`](@ref)
 
 """
-    function read_jdx_file(file_name::String;fixed_columns_number::Bool=false,delimiter = nothing)
+function read_jdx_file(file_name::String;
+                fixed_columns_number::Bool=false,
+                delimiter = nothing,
+                fixed_line_decoding::Bool = false,
+                fixed_chunk_decoding::Bool = false,
+                validate_data::Bool=true)
+
         @assert isfile(file_name) "Must be a file"
-        jdx_blocks = count_blocks(file_name)
+        jdx_blocks = find_blocks(file_name)
         if length(jdx_blocks) ==1
-            return read!(jdx_blocks[1],delimiter=delimiter,fixed_columns_number=fixed_columns_number)
+            return read!(jdx_blocks[1],
+                        delimiter=delimiter,
+                        fixed_columns_number=fixed_columns_number,
+                        fixed_line_decoding = fixed_line_decoding,
+                        fixed_chunk_decoding = fixed_chunk_decoding,
+                        validate_data = validate_data)
         else
-            return read!.(jdx_blocks,delimiter=delimiter,fixed_columns_number=fixed_columns_number)
+            return read!.(jdx_blocks,
+                            delimiter=delimiter,
+                            fixed_columns_number=fixed_columns_number,
+                            fixed_line_decoding = fixed_line_decoding,
+                            fixed_chunk_decoding = fixed_chunk_decoding,
+                            validate_data = validate_data)
         end
     end
     """
-    JDXblock(file_name::String)
+    parse_headers!(jdx::JDXblock,headers::Vector{String})
 
-Creates JDXreader object from full file name 
+internal function fills headers dictionary from a vector of strings
 """
-    function JDXblock(file_name::String) # external constructor
-        if !isfile(file_name)
-            error("Input filename must be the fullfile name to the existing file")
-        end
-        jdx = JDXblock()
-        jdx.file_name = file_name
-        return jdx
-    end
-    function parse_headers!(jdx::JDXblock,headers::Vector{String})
+function parse_headers!(jdx::JDXblock,headers::Vector{String})
         multilined_header_started = false
         last_key = ""
         for head in headers
@@ -404,64 +451,74 @@ Creates JDXreader object from full file name
                 jdx.data_headers[last_key] = val *" \n "*head
             end
         end
-
     end
-
 DEFAULT_DELIMITER(::Type{XYYline}) = isspace
 DEFAULT_DELIMITER(::Type{XYXYline}) = r"[,;]" 
 
     """
     addline!( jdx::JDXblock, 
-                        data_buffer::DataBuffer{DataLineType},
+                        data_buffer::DataBuffer{DataLineType,B,LD,ChunkDecoding},
                         current_line::String; # index of current data chunk
-                        delimiter=isspace) where DataLineType<:XYYline
+                        delimiter=DEFAULT_DELIMITER(DataLineType),
+                        validate_data::Bool=true) where {DataLineType<:XYYline,B,LD,ChunkDecoding}
 
 This function parses `current_line` string of file and fills the 
 parsed data to the y-vector of `jdx`  object `number_of_y_point_per_chunk` 
-- the number of data point (excluding the x-coordinate) in the line 
-`chunk_index`  - the index of chunk 
-`delimiter`   - data points delimiter used in `split` function
+    - the number of data point (excluding the x-coordinate) in the line 
+    `chunk_index` index of chunk 
+    `delimiter` data points delimiter used in `split` function
 
 """
     function addline!( jdx::JDXblock, 
-                        data_buffer::DataBuffer{DataLineType},
+                        data_buffer::DataBuffer{DataLineType,B,LD,ChunkDecoding},
                         current_line::String; # index of current data chunk
-                        delimiter=DEFAULT_DELIMITER(DataLineType)) where DataLineType<:XYYline
+                        delimiter=DEFAULT_DELIMITER(DataLineType),
+                        validate_data::Bool=true) where {DataLineType<:XYYline,B,LD,ChunkDecoding}
         
         if isempty(current_line) || current_line[1]=='#'  
              return NaN
         end 
         is_first_line = jdx.filled_points_counter == 0
+        # returns the total number of points added to the buffer
+        # if the buffer is resizable it is equal to the length of the buffer  
         cur_points_number =  fill_data_buffer!(data_buffer,current_line,delimiter)
+        data_buffer.ypoints_per_line = cur_points_number - 1 
+        data_buffer.xpoints_per_line = 1
+
+        buffer_starting_index = 2
+        buffer_ending_index = cur_points_number
+        data_starting_index = 1 + jdx.filled_points_counter
+        data_ending_index =  data_starting_index + cur_points_number - 2
         if is_first_line
-            number_of_y_point_per_chunk = cur_points_number - 1 
-            data_buffer.ypoints_per_line = number_of_y_point_per_chunk
-            data_buffer.xpoints_per_line = 1
-            resize!(jdx.y_data,number_of_y_point_per_chunk)
+            resize!(jdx.y_data, cur_points_number - 1 )
+        elseif ChunkDecoding <: Union{DIF,DIF_DUP} || 
+            (ChunkDecoding <: Unspecified_Chunk &&
+             get_chunk_decoding(current_line) <: Union{DIF,DIF_DUP})
+            # this works if the chunk decoding type is dif, than the first y value of each line after the first only_headers
+            # is used for checks
+            buffer_starting_index += 1
+            data_ending_index -=1
         end 
-        starting_index = 1 + jdx.filled_points_counter
-        ending_index =  starting_index + cur_points_number - 2
-        if ending_index > length(jdx.y_data) || starting_index > length(jdx.y_data)
-            return NaN
-        end
-        v = @view jdx.y_data[ starting_index : ending_index ]
-        y_data_buffer =@view data_buffer.buffer[2:cur_points_number]
+        v = @view jdx.y_data[ data_starting_index : data_ending_index ]
+        y_data_buffer =@view data_buffer.buffer[buffer_starting_index:buffer_ending_index]
         copyto!(v,y_data_buffer)
-        jdx.filled_points_counter += cur_points_number - 1 
+        jdx.filled_points_counter += buffer_ending_index - buffer_starting_index + 1
         return data_buffer.buffer[1] # returns x-value for checks
     end
     """
     addline!(jdx::JDXblock, 
                         data_buffer::DataBuffer{DataLineType},
                         current_line::String; # index of current data chunk
-                        delimiter=r"[,;]") where DataLineType<:XYXYline
+                        delimiter=r"[,;]",
+                        validate_data::Bool=true) where DataLineType<:XYXYline
 
-TBW
+Adds line to the XY...XY data
 """
 function addline!(jdx::JDXblock, 
                         data_buffer::DataBuffer{DataLineType},
                         current_line::String; # index of current data chunk
-                        delimiter=r"[,;]") where DataLineType<:XYXYline
+                        delimiter=r"[,;]",
+                        validate_data::Bool=true) where DataLineType<:XYXYline
 
         if isempty(current_line) || current_line[1]=='#'  
                     return NaN
@@ -498,13 +555,12 @@ Appends data to vector, initial chunk can be of zero size
                                             chunk_counter=1) where {D,B,
                                             LineDecodingType,
                                             ChunkType}
-        line_decoded = ChunkType(LineDecodingType(current_line))
+        line_decoded = current_line |> LineDecodingType |> ChunkType
         for chunk in eachsplit(line_decoded,delimiter)
             chunk = strip(chunk)
             !isempty(chunk) || continue # check for empty string
             #chunk_counter += split_data_chunk!(data_buffer,s,chunk_counter)
             chunk_counter +=set_or_push!(data_buffer.buffer,chunk_counter,parse_chunk(ChunkType,chunk)...)
-  
         end
         points_in_chunk = chunk_counter-1
         is_resizable(data_buffer) || length(data_buffer) != points_in_chunk && resize!(data_buffer.buffer,points_in_chunk)
@@ -512,18 +568,15 @@ Appends data to vector, initial chunk can be of zero size
     end
 
     """
-    generateXvector!(jdx::JDXblock)
+    generateVectors!(::JDXblock,::Type{<:DATAline})
 
-Generates equally spaced x-vector 
+Generates x-vector and precreates data vectors
 """
+function generateVectors!(::JDXblock,::Type{<:DATAline})end
 function generateVectors!(jdx::JDXblock,::Type{XYYline})
             point_number = round(Int64,jdx.data_headers["NPOINTS"])
             starting_X = haskey(jdx.data_headers,"FIRSTX") ? jdx.data_headers["FIRSTX"] : 0.0
-            if haskey(jdx.data_headers,"XFACTOR")
-                step_value =  ((jdx.data_headers["LASTX"] -  starting_X)/jdx.data_headers["XFACTOR"])/(point_number-1)
-            else
-                step_value =  (jdx.data_headers["LASTX"] -  starting_X)/(point_number-1)
-            end
+            step_value =  (jdx.data_headers["LASTX"] -  starting_X)/(point_number-1)
             if haskey(jdx.data_headers,"DELTAX") # check for the delta x values
                 check_data_point!(jdx.violation,
                                     jdx.data_headers["DELTAX"],
@@ -541,7 +594,7 @@ end
     """
     parse_headers(file::String)
 
-Parses headers from JCAMP-DX file
+Parses headers from JCAMP-DX file? returns dictionary with file headers
 """
 parse_headers(file::String) = file |> JDXblock |>  parse_headers!
 
@@ -549,7 +602,6 @@ parse_headers(file::String) = file |> JDXblock |>  parse_headers!
         read!(jdx; only_headers=true)
         return jdx.data_headers
     end
-
     function is_supported_jdx_format(file_name::AbstractString)
         headers = parse_headers(file_name)
         return haskey(headers,"JCAMP-DX") && isa(headers["JCAMP-DX"],Number) && headers["JCAMP-DX"]<=SUPPORTED_JCAMPDX_VERSION
@@ -560,7 +612,8 @@ parse_headers(file::String) = file |> JDXblock |>  parse_headers!
                                only_headers::Bool=false,
                                fixed_columns_number::Bool=true,
                                fixed_line_decoding::Bool = false,
-                               fixed_chunk_decoding::Bool = false)
+                               fixed_chunk_decoding::Bool = false,
+                               validate_data::Bool = true)
 
 
 fills precreated JDXblock object see [`JDXblock`](@ref).
@@ -570,13 +623,14 @@ fills precreated JDXblock object see [`JDXblock`](@ref).
     `fixed_columns_number`  if true, all lines are supposed to have the same number of chunks
     `fixed_line_decoding` if true, data line decoding (No_Line_Decoding, SQZ,PAC) is supposed  to be the same for all lines (parser obtains decoding from the first line of data)
     `fixed_chunk_decoding` if true, all data chunks decoding (No_Chunk_Decoding,DIF,DUP) is supposed  to be the same for all lines (parser obtains decoding from the first line of data)
-
+    `validate_data` if false: we don't need no validation
 """
 function read!(jdx::JDXblock; delimiter=nothing,
                                only_headers::Bool=false,
                                fixed_columns_number::Bool=true,
                                fixed_line_decoding::Bool = false,
-                               fixed_chunk_decoding::Bool = false)
+                               fixed_chunk_decoding::Bool = false,
+                               validate_data::Bool = true)
         if !isfile(jdx.file_name)
             return nothing
         end
@@ -598,20 +652,17 @@ function read!(jdx::JDXblock; delimiter=nothing,
             header_lines_counter = 0 # conter of lines per header
             first_line_buffer = DataBuffer()
             for ln in Iterators.drop(eachline(io_file), skip_lines)#eachline(io_file) #scans only headers and the first line of data
-                # !isempty(ln) || continue
                 if is_data_started 
-                        if !only_headers
-                            delimiter =  isnothing(delimiter) ? DEFAULT_DELIMITER(line_type) : delimiter
-                            #jdx.decoding =  # filling decoding type
-                            # @show jdx.decoding 
-                            first_line_buffer = DataBuffer(Vector{Float64}(undef,6),
-                                                        DataLineType =line_type,
-                                                        LineDecodingType = get_line_decoding(ln),
-                                                        ChunkType = get_chunk_decoding(ln) )
-                            x_point = addline!( jdx, first_line_buffer,ln, delimiter = delimiter) # this function modifies
-                            # jdx file block by setting values to the number of points-per-line properties 
-                        end
-                        break 
+                    if !only_headers
+                        delimiter =  isnothing(delimiter) ? DEFAULT_DELIMITER(line_type) : delimiter
+                        first_line_buffer = DataBuffer(Vector{Float64}(undef,6),
+                                                    DataLineType =line_type,
+                                                    LineDecodingType = get_line_decoding(ln),
+                                                    ChunkType = get_chunk_decoding(ln) )
+                                                    
+                        x_point = addline!( jdx, first_line_buffer,ln, delimiter = delimiter) # this function modifies
+                    end
+                    break 
                 else
                     l_upped = uppercase(ln)
                     is_data_started = occursin("##XYDATA",l_upped) || occursin("##XYPOINTS",l_upped) || occursin("##PEAK TABLE",l_upped)
@@ -629,7 +680,6 @@ function read!(jdx::JDXblock; delimiter=nothing,
                     push!(header_lines,l_upped)
                 end
             end # endof header lines parsing 
-           # #@show header_lines
             parse_headers!(jdx,header_lines) #parses headers to dict from a vector of strings
             if only_headers # if we need only block headers without data 
                 return (x=Vector{Float64}([]),
@@ -640,8 +690,6 @@ function read!(jdx::JDXblock; delimiter=nothing,
             number_of_y_point_per_chunk = length(jdx.y_data) # number of numeric points per line
             # by default we assume that the last line is ##END= thus it is ignored
             data_lines_number = total_number_of_lines - header_lines_counter - 1 # last line is ignored because there should be ##END
-            # @show jdx.data_headers["NPOINTS"]
-            # @show jdx.ypoints_per_line
             if haskey(jdx.data_headers,"NPOINTS") # correct JDX file
                 total_point_number = round(Int64,jdx.data_headers["NPOINTS"]) # total number of points is known
                 is_XYYline = line_type <: XYYline
@@ -664,28 +712,20 @@ function read!(jdx::JDXblock; delimiter=nothing,
                                              xpoints_per_line = first_line_buffer.xpoints_per_line,
                                              ypoints_per_line = first_line_buffer.ypoints_per_line)
                 end    
-                # @show data_buffer_container
                 x_factor = get(jdx.data_headers,"XFACTOR",1.0)
-
                 if is_XYYline    
                     x_gen = jdx.x_data[1] # generated x to compare
-                    #jdx.is_violated_flag[1] = !isapprox(x_gen, x_factor*x_point,rtol=X_VIOLATION_CRITERIUM)    
                     for i in 2:data_lines_number
                         ln = readline(io_file)
-                        # @show length(jdx.y_data)
                         x_point = addline!(jdx,data_buffer,ln,delimiter=delimiter)
                         x_point = x_point * x_factor
                         if !isnan(x_point) #&& fixed_columns_number
                             x_gen = jdx.x_data[(i-1)*number_of_y_point_per_chunk + 1] # generated x
-                            #jdx.is_violated_flag[i] =  !isapprox(x_gen, x_point,rtol=X_VIOLATION_CRITERIUM)
                         else
-                            #l = length(jdx.is_violated_flag)
-                            #deleteat!(jdx.is_violated_flag,i:l)
                             break
                         end#endif       
                     end#endfor
                 else #XYXYline
-                   # @show jdx
                     for i in 2:data_lines_number
                         ln = readline(io_file)
                         addline!(jdx,data_buffer,ln,delimiter=delimiter)     
@@ -693,7 +733,6 @@ function read!(jdx::JDXblock; delimiter=nothing,
                 end
             else number_of_y_point_per_chunk==1 # file with two columns like CSV
                 total_point_number = data_lines_number
-                #jdx.is_violated_flag = Vector{Bool}(undef,1)
                 resize!(jdx.y_data,total_point_number)
                 jdx.x_data = similar(jdx.y_data)
                 jdx.x_data[1] = x_point
@@ -703,14 +742,9 @@ function read!(jdx::JDXblock; delimiter=nothing,
                      x_out = addline!(jdx,data_buffer, ln,delimiter=delimiter)
                      !isnan(x_out) ? jdx.x_data[i] = x_out : nothing
                 end
-                #jdx.is_violated_flag[1]=false
             end
 
         end # close file
-        if line_type<:XYYline   
-            #is_violated = any(jdx.is_violated_flag)
-           #!is_violated ? nothing : @warn "X values check for TITLE=$(jdx.data_headers["TITLE"]) is violated at $(sum(jdx.is_violated_flag)) points"
-        end
         if haskey(jdx.data_headers,"YFACTOR") 
             y_factor::Float64 = jdx.data_headers["YFACTOR"] 
             jdx.y_data .*= y_factor
@@ -718,16 +752,16 @@ function read!(jdx::JDXblock; delimiter=nothing,
         return (x=jdx.x_data,
                 y=jdx.y_data, 
                 headers=jdx.data_headers)
-    end#enof read!
+    end#endof read!
 
     """
-    count_blocks(file_name)
+    find_blocks(file_name)
 
 Counts blocks in file `file_name`, fills coordinates of blocks start
 and finish in file lines, returns the vector of [`JDXblock`](@ref) blocks
 or a singe block.
 """
-function count_blocks(file_name)
+function find_blocks(file_name)
         @assert isfile(file_name) "Not a file"
         jdx_blocks = Vector{JDXblock}()
         open(file_name) do io
@@ -747,7 +781,6 @@ function count_blocks(file_name)
                     end
                 end        
             end#forloop
-
         end # fileopen
         return jdx_blocks
     end#funend
