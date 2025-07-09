@@ -1,5 +1,6 @@
-using JCAMPDXir,DelimitedFiles,Interpolations
+
 using Test
+using JCAMPDXir,DelimitedFiles,Interpolations
 using GitHub,Downloads
 
 test_data_folder = joinpath(@__DIR__(),"tests data")

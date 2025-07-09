@@ -2,7 +2,7 @@
 # module to read JCAMP-DX=4.24 file formats
 
 module JCAMPDXir
-using Dates,Interpolations,OrderedCollections,Printf,StaticArrays
+using Interpolations,OrderedCollections,Printf,StaticArrays
 export JDXblock,
         read!,
         read_jdx_file,
@@ -721,10 +721,7 @@ function read!(jdx::JDXblock; delimiter=nothing,
             end # endof header lines parsing 
             parse_headers!(jdx,header_lines) #parses headers to dict from a vector of strings
             if only_headers # if we need only block headers without data 
-                return (x=Vector{Float64}([]),
-                        y=Vector{Float64}([]), 
-                        headers=jdx.data_headers,
-                        validation = nothing)
+                return nothing
             end
             number_of_y_point_per_chunk = length(jdx.y_data) # number of numeric points per line
             # by default we assume that the last line is ##END= thus it is ignored
@@ -782,6 +779,11 @@ function read!(jdx::JDXblock; delimiter=nothing,
             end
 
         end # close file
+        !only_headers || return (x=Vector{Float64}([]),
+                            y=Vector{Float64}([]), 
+                            headers=jdx.data_headers,
+                            validation = nothing)
+
         if haskey(jdx.data_headers,"YFACTOR") 
             y_factor::Float64 = jdx.data_headers["YFACTOR"] 
             jdx.y_data .*= y_factor
