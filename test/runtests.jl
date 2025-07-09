@@ -52,10 +52,6 @@ end
     println("____________________")
     println("\ntesting files from $(python_package_test_data)" )
     for f in files_from_jcamp_py
-
-        if !JCAMPDXir.is_supported_jdx_format(joinpath(python_package_test_data,f))
-            continue
-        end
        try 
             print("reading $(f) ")
             JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,f))

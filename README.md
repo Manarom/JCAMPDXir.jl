@@ -6,10 +6,9 @@
 # General description
 
 This package is designed to read and write infrared spectra saved in JCAMP-DX (infrared) format.
-It cannot be considered as a complete implementation of the whole JCAMP-DX format specification. 
-However, it implements some of the basic functionality to read  and write JCAMP-DX files
-according to the `4.24` and also it works with `5.01`. 
-It was tested on examples from python package [jcamp](https://github.com/nzhagen/jcamp.git) 
+It implements some of the basic functionality to read  and write JCAMP-DX files
+according to the `4.24` and also it tested with `5.01`. 
+It was tested on all IR spectra examples from python package [jcamp](https://github.com/nzhagen/jcamp.git) 
 
 Full  documentation is available at  [documentation](https://manarom.github.io/JCAMPDXir.jl/)
 
@@ -49,4 +48,4 @@ write_jdx_file(x,y,"MKM","TRANSMITTANCE") # to write x- and y- data vectors of t
 ```
 
 ## Contact
-To contact me [GitHub repository](https://github.com/Manarom).
+To contact me use [GitHub repository](https://github.com/Manarom).
