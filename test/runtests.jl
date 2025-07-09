@@ -1,28 +1,40 @@
-using JCAMPDXir,DelimitedFiles,Interpolations
+
 using Test
+using JCAMPDXir,DelimitedFiles,Interpolations
 using GitHub,Downloads
+
 test_data_folder = joinpath(@__DIR__(),"tests data")
 python_package_test_data = joinpath(test_data_folder,"jcamp_python")
-#cheking files from jcamp repository for python
-owner = "nzhagen"
-repo = "jcamp"
-path = "data/infrared_spectra"
-R = GitHub.repo(joinpath(owner,repo))
-files, _ = GitHub.directory(R, path)
 files_from_jcamp_py = filter(r->occursin(".jdx",r), readdir(python_package_test_data))
-for f in files
-    fname = f.name
-    !occursin(".jdx",fname) || fname ∈ files_from_jcamp_py ? continue : nothing
+#cheking files from jcamp repository for python
+try
+    owner = "nzhagen"
+    repo = "jcamp"
+    path = "data/infrared_spectra"
+    print("Refreshing testing data from ($(joinpath(owner,repo)))...")
+    R = GitHub.repo(joinpath(owner,repo))
+    files, _ = GitHub.directory(R, path)
     
-    Downloads.download(string(f.download_url),joinpath(python_package_test_data,fname))
+    for f in files
+        fname = f.name
+        !occursin(".jdx",fname) || fname ∈ files_from_jcamp_py ? continue : nothing
+        Downloads.download(string(f.download_url),joinpath(python_package_test_data,fname))
+    end
+    println("ok")
+catch 
+    println("unable to read data from repo")
 end
-
-
 
 test_file = joinpath(test_data_folder,"JCAMP_test_file.jdx") # this file containes testing spectra in JCAMP-DX specification
 no_headers_file = joinpath(test_data_folder,"test_file_no_headers.txt") # data without headers
 written_file_name = joinpath(test_data_folder,"written.jdx")
 two_column_ascii_file_name = joinpath(test_data_folder,"transmittance.txt")
+XYXY_test_file = joinpath(test_data_folder,"JCAMP_XYXY.jdx")
+JCAMPDX5_test_file = joinpath(test_data_folder,"JCAMPDX5.jdx")
+
+JCAMPDX_ASDF_file = joinpath(python_package_test_data,"isopropanol_ASDF.jdx")
+ASDF_file_decoded = joinpath(test_data_folder,"isopropanol_ASDF_decoded.txt") # this file was decoded using jcamp package 
+
 
 data_norm(x,y) = sqrt(sum(x->x^2, x .-y))/length(x)
 data_norm_rel(x,y) =begin
@@ -36,21 +48,66 @@ end
 KM2T(x) = begin # function to convert Kubelka-Munk to transmittance
     return  @. 10^(-x) #A = log10(I0/I) = -log10(T) => T=10^(-A)
 end
+
 @testset "JCAMPDXir.jl" begin
+    println("____________________")
     println("\ntesting files from $(python_package_test_data)" )
     for f in files_from_jcamp_py
-
-        if !JCAMPDXir.is_supported_jdx_format(joinpath(python_package_test_data,f))
-            continue
-        end
        try 
+            print("reading $(f) ")
             JCAMPDXir.read_jdx_file(joinpath(python_package_test_data,f))
             @test true
+            print("...ok \n")
        catch ex
-            @show ex.message
+            print("...reading error \n")
+            @show ex
             @test false
        end
     end
+    println("____________________")
+    println("\nReading XYYdata")
+    data = JCAMPDXir.read_jdx_file(test_file) 
+    for (i,y) in enumerate(0.0523676*[1811180; 1261721; 2334144; 2496642;
+                                    2864863; 3238081; 3165312; 3090651; 
+                                    2718186; 2951604; 3192506; 3573356;
+                                    3591102; 3219943; 3321428; 3797139])
+        @test data.y[i] ≈ y
+    end
+    println("____________________")    
+    println("\nReading XYXYdata")
+    data = JCAMPDXir.read_jdx_file(XYXY_test_file) 
+    for (i,y) in enumerate(eachrow([11995.21 32112;
+                              11991.36 32505;
+                              11987.5 32727;
+                              11983.64 33481;
+                              11979.79 33798;
+                              11975.93 33076;
+                              11972.07 32550;
+                              11968.22 33189]))
+       @test data.y[i] ≈ 1e-6*y[2]
+       @test data.x[i] ≈ y[1]   
+    end 
+    println("____________________")    
+    println("\nReading JCAMP-DX-5.01")
+    data = JCAMPDXir.read_jdx_file(JCAMPDX5_test_file)
+    for (i,y) in enumerate(vec([114292232 112522752 111130888 110025904 109160424 108469448 107820264 107003944 105776976 103944576 101429344 98357408 94981288]))
+        @test data.y[i] ≈ 1.000000E-009*y 
+    end
+
+
+    println("____________________")    
+    println("\nReading ASDF file format")
+    data = JCAMPDXir.read_jdx_file(JCAMPDX_ASDF_file)
+    asdf_data = readdlm(ASDF_file_decoded) # reading data decoded using python jcamp parser
+    @test begin
+        discr = 0
+        for (y1,y2) in zip(asdf_data[:,2],data.y)
+            discr +=abs(y1-y2)
+        end
+        discr/length(data.y)
+    end ≈ 0
+
+    println("____________________")
     println("\nTesting by writing and reading the same data")
     data = JCAMPDXir.read_jdx_file(test_file) # reading test file
     x_units = data.headers["XUNITS"] # x units of loaded data
