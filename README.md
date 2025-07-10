@@ -39,7 +39,7 @@ write_jdx_file(x,y,"MKM","TRANSMITTANCE")
 # to write x - and y - data vectors of the sama size
 
 ```
-## Other JCAMP-DX parsers:S
+## Other JCAMP-DX parsers:
 
 There is a parser, written in python [jcamp](https://github.com/nzhagen/jcamp.git), 
 examples from this repository were used for testing this package
