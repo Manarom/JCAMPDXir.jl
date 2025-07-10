@@ -800,7 +800,7 @@ function read!(jdx::JDXblock; delimiter=nothing,
             jdx.y_data .*= y_factor
         end
         msg = validate_data ? validate!(jdx) : " "
-        length(msg) <= 0 || println(validation_message(jdx.validation))
+        length(msg) <= 0 || print(" Validation: "*validation_message(jdx.validation))
         return (x=jdx.x_data,
                 y=jdx.y_data, 
                 headers=jdx.data_headers,
