@@ -2,40 +2,29 @@
 # module to read JCAMP-DX=4.24 file formats
 
 module JCAMPDXir
-using Interpolations,OrderedCollections,Printf,StaticArrays
-export JDXblock,
-        read!,
-        read_jdx_file,
+using Interpolations,OrderedCollections,Printf,StaticArrays,Dates
+export  read_jdx_file,
         write_jdx_file,
         parse_headers,
         xconvert!,
         yconvert!,
-        addline!,
-        XYYline
+        DataValidation,
+        ValidationPoint
 """
 This JCAMP-DX (infrared) file format was developed for the exchange of infrared spectra between different laboratories.
-For general description of format refer to  [`UIPAC.ORG (pdf file)`](https://iupac.org/wp-content/uploads/2021/08/JCAMP-DX_IR_1988.pdf)
+For general description of format refer to  [`UIPAC.ORG pdf-file`](https://iupac.org/wp-content/uploads/2021/08/JCAMP-DX_IR_1988.pdf)
 In addition to the spectra themselves, the file also stores metadata containing information about the units of measurement
-and the conditions under which the spectra were acquired. A detailed specification of the format is provided via the link. 
+and the conditions under which the spectra were acquired. 
 
 JCAMP file content example: 
 
             ##TITLE=1 
             ##JCAMP-DX=4.24
             ##DATATYPE=INFRARED SPECTRUM
-            ##DATE=2021/10/17
-            ##TIME=11:30
             ##XUNITS=1/CM
             ##YUNITS=TRANSMITTANCE
-            ##XFACTOR=1
             ##YFACTOR=0.00699183
-            ##FIRSTX=0
-            ##LASTX=15801.4671743
             ##FIRSTY=11746.3412893072
-            ##MAXX=15801.4671743
-            ##MINX=0
-            ##MAXY=3.75371e+006
-            ##MINY=4040.25
             ##NPOINTS=16384
             ##XYDATA=(X++(Y..Y))
             0 1680010 821286 2148133 1505245 1537124 1367661 1147725 1134981
@@ -44,9 +33,20 @@ JCAMP file content example:
             .
             .
             ##END=
+
+According to JCAMP specifications there are several format for data compression:
+
+            - simple integer: 7.71603 1166853 5213186 -1029828 -1067595 (y-data  decoded as integer numbers)
+            - PAC: 7.71603+1166853+5213186-1029828-1067595 (signs are used as delimiters)
+             -SQZ: 7.71603A166853E213186a029828a067595 (signs are converted according to [`SQZ_digits`](@ref))
+             -DIF: 7.71603 1166853 M046333 o243014 l7767 (all data chunk except the first one represent relative 
+                    shift of the value with respect to the previous one)
+             -DUP:  in this mode all duplicated y- values are replaced with a single letter according to [`DUP_digits`](@ref)
+                    these values show the number of duplications, DUP mode can be combined with DIF-mode
 """
 JCAMPDXir
     const IntOrNothing = Union{Int,Nothing}
+    const SUPPORTED_JCAMPDX_VERSION = 5.2
     const YMAX_INT = round(Int64,typemax(Int32)/4)-1
     const default_headers = OrderedDict{String,Union{Float64,String}}(
             "TITLE"=>"NO TITLE",
@@ -110,7 +110,7 @@ JCAMPDXir
 
     """
     Types for decoding of both lines and chunks, line and chunk typisation is used 
-    to dispath during parsing
+    to dispatch during parsing
 """
     abstract type Decoding end
     """
@@ -121,11 +121,11 @@ By default, all chunks and line decoding do nothing to the string line
 """
     (::Type{T})(s::AbstractString) where T<:Decoding= s   
     """
-    Types for decoding lines and shunk string
+    Types for decoding lines and chunk string
 """
     abstract type LineDecoding<:Decoding end
     """
-    When there is no line decoding all 
+    When there is no line decoding all
 """
     struct No_Line_Decoding<:LineDecoding end
     struct SQZ<:LineDecoding end
@@ -134,7 +134,7 @@ By default, all chunks and line decoding do nothing to the string line
     """
     When using Unspecified_Line type line type parser looks for the actual type for each line
 
-    """
+"""
     struct Unspecified_Line<:LineDecoding end
 # string type checkers
     is_PAC_string(s::AbstractString) =occursin('-',s)||occursin('+',s)
@@ -157,7 +157,9 @@ function get_line_decoding(s::AbstractString)
     """
     (::Type{SQZ})(s::AbstractString)
 
-All types are callable, when calling on a string 
+All types are callable on a string and use string conversion to add delimiters between the data chunks
+When line decoding is of `Unspecified_Line` before converting the string, there is an additional operation 
+to get the string type in run-time
 """
 (::Type{SQZ})(s::AbstractString) = replace(s,SQZ_digits...)
     (::Type{PAC})(s::AbstractString) = replace(s,"+"=>" +","-"=>" -")
@@ -191,7 +193,7 @@ All types are callable, when calling on a string
     """
     parse_chunk(::Type{<:ChunkDecoding},s::AbstractString)
 
-Functions to parse data chunk, 
+Functions to parse data chunk 
 """
 function parse_chunk end
     function parse_chunk(::Type{DUP},s::AbstractString)
@@ -212,7 +214,7 @@ function parse_chunk end
         if is_DIF && is_DUP
             m = match(DUP_regexp,s)
             (val,) = parse_chunk(DIF,s[1:m.offset-1])
-            n = DUP_digits[m.match[1]] # multiplyer numeric
+            n = DUP_digits[m.match[1]] # multiplier numeric
             return (val,n,DIF_DUP)
         end
         is_DUP && return parse_chunk(DUP,s)
@@ -334,7 +336,7 @@ Creates an empty JDXblock object from full file name
         return (has_x_min,has_x_max,has_y_min,has_y_max)
     end
 """
-    DataBuffer is an itermediate container for data parsed from each string
+    DataBuffer is an intermediate container for data parsed from each string
 """
     mutable struct DataBuffer{  DataLineType <: DATAline, # line format XYYline or XYXYline
                                 BufferType   <: AbstractVector,# data buffer type may be static vector or dynamic vector
@@ -407,22 +409,25 @@ Input arguments:
 
     `file_name` - full file name
     (optional keyword args) 
-    `fixed_columns_number` - if it is known that each line in file has the same number of data chunks, this flag 
+    `fixed_columns_number` - if it is known that each line in file has the same number of data chunks (coded numbers), this flag can be settled to true
     `delimiter`  - data chunks delimiter (default value is space)
     `fixed_line_decoding` if `true` line decoding type ( PAC,SQZ or no line decoding) is taken only once from the first line of data, otherwise new type is obtained for each line
     `fixed_chunk_decoding` if `true` chunk decoding type ( DIF, DUP, mixed DIFDUP or no chunk decoding) is taken from the first line of data, otherwise new type is obtained for each line    
     `validate_data` turns on internal data checks 
+Usually setting flag value result in speeding up the data loading process by reducing the allocations etc.
+If file loading speed is not impoertant optional flags can be remained at defaults
 
-returns namedtuple (or a vector of namedtuples in the case of multiple blocks) 
+Output arguments is the  namedtuple (or a vector of namedtuples in the case of multiple blocks) 
+
 with fields:
 
     x - coordinate (wavelength, wavenumber or other)
 
-    y - data
+    y - data 
 
-    headers - dictionary in "String => value" format with headers values 
+    headers - dictionary in "String => value" format with headers values, values can be both numbers and strings
 
-    data_validation, which is the named tuple with 
+    data_validation -  structure of [`DataValidation`](@ref) type
 """
 function read_jdx_file(file_name::String;
                 fixed_columns_number::Bool=false,
@@ -485,17 +490,17 @@ DEFAULT_DELIMITER(::Type{XYYline}) = isspace
 DEFAULT_DELIMITER(::Type{XYXYline}) = r"[,;]" 
 
     """
-    addline!( jdx::JDXblock, 
+    addline!(           jdx::JDXblock, 
                         data_buffer::DataBuffer{DataLineType,B,LD,ChunkDecoding},
                         current_line::String; # index of current data chunk
                         delimiter=DEFAULT_DELIMITER(DataLineType),
                         validate_data::Bool=true) where {DataLineType<:XYYline,B,LD,ChunkDecoding}
 
-This function parses `current_line` string of file and fills the 
-parsed data to the y-vector of `jdx`  object `number_of_y_point_per_chunk` 
+This function parses `current_line` string of file, fills data buffer `data_buffer` by
+calling [`fill_data_buffer!`](@ref) and copies buffer content to x- and y-vector of `jdx` object [`JDXblock`](@ref)   
     - the number of data point (excluding the x-coordinate) in the line 
-    `chunk_index` index of chunk 
-    `delimiter` data points delimiter used in `split` function
+    -`delimiter` data points delimiter used in `split` function
+    -`validate_data` if false, parser ignores all data validations
 
 """
     function addline!( jdx::JDXblock, 
@@ -581,10 +586,16 @@ function addline!(jdx::JDXblock,
         return  (data_buffer.buffer[1],starting_index)
     end   
     """
-    fill_data_buffer!(data_buffer::Vector{Float64},current_line,delimiter,chunk_counter::Int=1)
+    fill_data_buffer!(data_buffer::DataBuffer{D,B,LineDecodingType,ChunkType},
+                                            current_line,
+                                            delimiter, 
+                                            chunk_counter=1) where {D,B,
+                                            LineDecodingType,
+                                            ChunkType}
 
-Appends data to vector, initial chunk can be of zero size
-
+Fills data buffer `data_buffer` from `current_line`, in `current_line` all data 
+chunks should be separated by the `delimiter`, returns the number of data chunks added 
+to buffer
 """
     function fill_data_buffer!(data_buffer::DataBuffer{D,B,LineDecodingType,ChunkType},
                                             current_line,
@@ -607,7 +618,7 @@ Appends data to vector, initial chunk can be of zero size
     """
     generateVectors!(::JDXblock,::Type{<:DATAline})
 
-Generates x-vector and precreates data vectors
+Generates x-vector (XY...Y data format) and precreates y-vectors
 """
 function generateVectors!(::JDXblock,::Type{<:DATAline})end
 function generateVectors!(jdx::JDXblock,::Type{XYYline})
@@ -632,7 +643,7 @@ end
     """
     parse_headers(file::String)
 
-Parses headers from JCAMP-DX file? returns dictionary with file headers
+Parses headers from JCAMP-DX file, returns dictionary with file headers
 """
 parse_headers(file::String) = file |> JDXblock |>  parse_headers!
 
@@ -661,7 +672,7 @@ fills precreated JDXblock object see [`JDXblock`](@ref).
     `fixed_columns_number`  if true, all lines are supposed to have the same number of chunks
     `fixed_line_decoding` if true, data line decoding (No_Line_Decoding, SQZ,PAC) is supposed  to be the same for all lines (parser obtains decoding from the first line of data)
     `fixed_chunk_decoding` if true, all data chunks decoding (No_Chunk_Decoding,DIF,DUP) is supposed  to be the same for all lines (parser obtains decoding from the first line of data)
-    `validate_data` if false: we don't need no validation
+    `validate_data` if false: we don't need no validation (if false ignores all data validations specified by JCAMP format)
 """
 function read!(jdx::JDXblock; delimiter=nothing,
                                only_headers::Bool=false,

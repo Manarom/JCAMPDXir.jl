@@ -2,5 +2,5 @@
 
 ```@autodocs
     Modules = [JCAMPDXir]
-    Order   = [:module,:type,:function]
+    Order   = [:module,:const,:type,:function]
 ```

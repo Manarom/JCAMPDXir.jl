@@ -2,10 +2,33 @@
 # JCAMPDXir.jl
 
 ## General description
-This lightweight package enables reading and writing of infrared spectra files in the JCAMP-DX format, which typically uses the ".jdx" file extension. It was written for a specific task and cannot be considered as a complete implementation of all JCAMP-DX format specification. However, it implements the main functionality to read  and write JCAMP-DX files according to the `JCAMP-DX=4.24`.
 
-The JCAMP-DX format for infrared spectra was created to facilitate the exchange of spectral data between laboratories. For a detailed overview of the JCAMP-DX infrared format, please refer to [JCAMP-DX for infrared 4.24](https://iupac.org/what-we-do/digital-standards/jcamp-dx/). In addition to spectra themselves, JCAMP-DX files also store some metadata containing information about the units of measurement and the conditions under which the spectra were acquired. A detailed specification of the format is provided via the link.  
+This package is designed to read and write infrared spectra saved in JCAMP-DX (infrared) format.
+It implements the main functionality to read and write JCAMP-DX files according to the `5.01`.   
 
-## Contact
+## About JCAMP-DX file format
+For a detailed overview of the JCAMP-DX infrared format, please refer to
+[JCAMP-DX for infrared](https://iupac.org/what-we-do/digital-standards/jcamp-dx/)
 
-To contact me, please do it through the [GitHub repository](https://github.com/Manarom/JCAMPDXir.jl).
+
+## Current state of the package
+Currently, the package parses JCAMP-DX files written in  `(X++(Y..Y))` and `(XY...XY)` data line formats 
+in a single or multiple blocks (each block must be embraced in `##TITLE...##END`).  
+Supported data compression methods:
+- for reading: no data compression, integer comression, `SQZ`,`PAC`,`DIF` and `DUP` (file can use various combinations of  these compression formats simultaneously)
+- for writing: simple integer compression, the package also supports various x- and y- data units conversions
+
+The package was tested for reading all IR-spectra from python package [jcamp](https://github.com/nzhagen/jcamp.git)
+
+## Quick start
+```julia
+import Pkg 
+Pkg.add("https://github.com/Manarom/JCAMPDXir.jl.git")
+using JCAMPDXir
+(x,y,headers,validation) = read_jdx_file(file_name) 
+# to read the file, x - x-values, y - y values, headers - file headers, validation - jcamp specification checks
+
+write_jdx_file(x,y,"MKM","TRANSMITTANCE") 
+# to write x - and y - data vectors of the sama size
+
+```

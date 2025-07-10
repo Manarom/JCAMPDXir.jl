@@ -8,17 +8,16 @@ const yNUM2STR = Dict(1=>"TRANSMITTANCE",2=>"REFLECTANCE",3=>"ABSORBANCE",4=>"KU
 const supported_x_units = join(keys(xSTR2NUM),",");
 const supported_y_units = join(keys(ySTR2NUM),",");
 #const MAX_POINTS_IN_LINE = 15 # this limits the number of point per single line 
-const SUPPORTED_JCAMPDX_VERSION =4.24
 abstract type sUnits{T} end
 struct yUnits{T}<:sUnits{T}
-yUnits(u::String) = begin
-return haskey(ySTR2NUM,uppercase(u)) ? new{ySTR2NUM[uppercase(u)]}() : new{5}()
-end
+    yUnits(u::String) = begin
+        return haskey(ySTR2NUM,uppercase(u)) ? new{ySTR2NUM[uppercase(u)]}() : new{5}()
+    end
 end
 struct xUnits{T} <:sUnits{T}
-xUnits(u::String) = begin
-return haskey(xSTR2NUM,uppercase(u)) ? new{xSTR2NUM[uppercase(u)]}() : error("this x units are not supported, possible units are: "*supported_x_units)
-end
+    xUnits(u::String) = begin
+        return haskey(xSTR2NUM,uppercase(u)) ? new{xSTR2NUM[uppercase(u)]}() : error("this x units are not supported, possible units are: "*supported_x_units)
+    end
 end
 units(::xUnits{T}) where T = xNUM2STR[T]
 units(::yUnits{T}) where T = yNUM2STR[T]
