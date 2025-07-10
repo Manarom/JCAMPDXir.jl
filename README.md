@@ -13,6 +13,7 @@ Full  documentation is available at  [documentation](https://manarom.github.io/J
 
 For a detailed overview of the JCAMP-DX infrared format, please refer to [JCAMP-DX](https://iupac.org/what-we-do/digital-standards/jcamp-dx/)
 
+
 ## Current state of the package
 
 Currently, the package parses JCAMP-DX files written in  `(X++(Y..Y))` and `(XY...XY)` data line formats 
@@ -38,5 +39,12 @@ write_jdx_file(x,y,"MKM","TRANSMITTANCE")
 # to write x - and y - data vectors of the sama size
 
 ```
+## Other JCAMP-DX parsers:S
+
+There is a parser, written in python [jcamp](https://github.com/nzhagen/jcamp.git), 
+examples from this repository were used for testing this package
+
+R-language package [readJDX](https://github.com/bryanhanson/readJDX.git)
+
 ## Contact
 To contact me use [GitHub repository](https://github.com/Manarom).
