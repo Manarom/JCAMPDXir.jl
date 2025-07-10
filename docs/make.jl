@@ -11,12 +11,7 @@ makedocs(
         pages=[
                 "Home" => "index.md",
                 "JCAMPDXir" =>"JCAMPDXir.md"
-                #"Examples"=>["Examples" =>"pluto_tests_git.md"
                 ]
-                #="Modules" => [
-                    "PlanckFunctions" =>"PlanckFunctions.md"
-                    "TestingData"=>"TestingData.md"
-                 ] =#
 )
 deploydocs(;
                 repo="https://github.com/Manarom/JCAMPDXir.jl/blob/{commit}{path}#{line}", 

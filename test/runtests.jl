@@ -1,7 +1,7 @@
 
 using Test
-using JCAMPDXir,DelimitedFiles,Interpolations
-using GitHub,Downloads
+#using JCAMPDXir
+using GitHub,Downloads,DelimitedFiles,Interpolations
 
 test_data_folder = joinpath(@__DIR__(),"tests data")
 python_package_test_data = joinpath(test_data_folder,"jcamp_python")

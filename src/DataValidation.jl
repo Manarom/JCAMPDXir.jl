@@ -1,6 +1,6 @@
- """
-        Stores Validation points
     """
+        Stores Validation points
+"""
     struct ValidationPoint{T<:Number}
         value_checker::T
         value_real::T
@@ -14,7 +14,11 @@
     const X_VIOLATION_CRITERIUM = 1e-2
     const DELTAX_VIOLATION_CRITERIUM = 1e-3
     const Y_VIOLATION_CRITERIUM = 1e-2
+"""
+    VIOLATION_CRITERIA
 
+    Dictionary with default values for data validaion
+"""
     const VIOLATION_CRITERIA = Dict( :npoints => 1.0,
                                      :deltax => DELTAX_VIOLATION_CRITERIUM ,
                                      :maxx => X_VIOLATION_CRITERIUM ,
@@ -29,10 +33,14 @@
             new(nothing,nothing,Dict{Symbol,ValpNothing}(k=>nothing for k in keys(VIOLATION_CRITERIA)))
         end 
 end
-Base.show(dv::DataType) = print(validation_message(dv))
+Base.show(io::IO, dv::DataValidation) = begin
+    println(io,)
+    println(io,validation_message(dv))
+end 
 function validation_message(dv::DataValidation)
-    warning_message = ""
+    warning_message = "no errors"
     has_violations(dv) || return warning_message
+    warning_message = ""
     if !isnothing(dv.x) 
         warning_message = warning_message*" data check failed for x at $(length(dv.x)) points \n"
     end
@@ -45,6 +53,11 @@ function validation_message(dv::DataValidation)
     end
     return warning_message
 end
+"""
+    has_violations(dv::DataValidation)
+
+CHeks if there is any data violations
+"""
 function has_violations(dv::DataValidation)
     isnothing(dv.x) && isnothing(dv.y) ? nothing : return true
     for p in values(dv.single_point_validators)
@@ -67,6 +80,25 @@ function Base.push!(dv::DataValidation,p::ValidationPoint,field::Symbol)
     return dv
 end
 
+"""
+    check_data_point!(dv::DataValidation,
+                                    value_checker::T,
+                                    value_real::T,
+                                    field::Symbol,
+                                    point_index::Int=0,
+                                    line_index::Int=0) where T
+
+Function used to check the value, input args:
+
+    - dv - [`DataValidation`](@ref) object
+    - value_checker - checker value (Usually this value is taken from file headers)
+    - value_real - value parsed from file
+    - field must be :x , :y (for data vector validation) or one of [`VIOLATION_CRITERIA`](@ref) keys
+    - point_index - index of data point (used to form the message if the validation fails)
+    - line_index - index of line in file (used to form the message if the validation fails)
+
+If value_checker ≈ value_real doesnt fulfilled
+"""
 function check_data_point!(dv::DataValidation,
                                     value_checker::T,
                                     value_real::T,
